@@ -118,3 +118,9 @@ def trajectory_from_path_const_vel(target_path, max_velocity, sampling_time):
         orientation_rpy,
         orientation_rpy_rates,
     )
+
+
+def trajectory_from_path_bang_bang(
+    target_path, max_velocity, sampling_time, min_speed, max_acc
+):
+    pass

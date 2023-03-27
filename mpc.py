@@ -3,19 +3,10 @@ import cvxpy as cp
 import numpy as np
 from math import sin, cos, tan
 
-# from gym_pybullet_drones.control.BaseControl import BaseControl
-# from gym_pybullet_drones.utils.enums import DroneModel
-# import pybullet as p
-
-
 class MPCControl:
-    ################################################################################
-
     def __init__(
         self,
-        drone_model,
-        g: float = 9.81,
-        N=30,
+        N=3,
         timestep_reference=None,
         timestep_mpc_stages=0.25,
     ):
@@ -30,24 +21,10 @@ class MPCControl:
         N : optimization horizon
 
         """
-        super().__init__(drone_model=drone_model, g=g)
         self.t_s = timestep_mpc_stages  # time step per stage
         self.N = N
         self._buildModelMatrices()
         self._buildMPCProblem(timestep_reference)
-        self.reset()
-
-    ################################################################################
-
-    def reset(self):
-        """Resets the control classes.
-
-        The previous step's and integral errors for both position and attitude are set to zero.
-
-        """
-        super().reset()
-
-    ################################################################################
 
     def _buildModelMatrices(self):
         I_x = 7.5e-3  # self._getURDFParameter("ixx")
@@ -129,7 +106,7 @@ class MPCControl:
         dr_dot_dr = + k_rz/I_z
 
 
-        self.A = np.array([0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+        self.A = np.array([[0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
                            [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
                            [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
                            [0, 0, 0, -k_tx/m, 0, 0, dx_ddot_dphi, dx_ddot_dtheta, dx_ddot_dpsi, 0, 0, 0],
@@ -140,7 +117,7 @@ class MPCControl:
                            [0, 0, 0, 0, 0, 0, dpsi_dot_dphi, dpsi_dot_dtheta, 0, 0, dpsi_dot_dq, dpsi_dot_dr],
                            [0, 0, 0, 0, 0, 0, 0, 0, 0, dp_dot_dp, dp_dot_dq, dp_dot_dr],
                            [0, 0, 0, 0, 0, 0, 0, 0, 0, dq_dot_dp, dq_dot_dq, dq_dot_dr],
-                           [0, 0, 0, 0, 0, 0, 0, 0, 0, dr_dot_dp, dr_dot_dq, dr_dot_dr])
+                           [0, 0, 0, 0, 0, 0, 0, 0, 0, dr_dot_dp, dr_dot_dq, dr_dot_dr]])
         
 
         self.B = np.array([[0, 0, 0, 0],
@@ -169,8 +146,6 @@ class MPCControl:
             [1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05]
         )
         self.W_input = np.identity(4) * 0.01
-
-    ################################################################################
 
     def _buildMPCProblem(self, timestep_reference=None):
         if timestep_reference == None:
@@ -210,3 +185,158 @@ class MPCControl:
         constraints += [x[:, 0] == x_init]
 
         self.problem = cp.Problem(cp.Minimize(cost), constraints)
+
+    def _computeRPMfromInputs(self, u_delta):
+        """
+        Computes the rpm given the small-signal u_delta around the operating point.
+        """
+        return np.sqrt(np.matmul(self.K, self.u_op + u_delta))
+
+    def _getNextGoalIndices(
+        self,
+        current_time,
+        target_times,
+        cur_pos,
+        target_pos,
+        select_spatially_closest=False,
+    ):
+        """
+        Computes the upcoming next self.N waypoints to target and returns their indices.
+        current_time:
+            float with current time
+        target_times:
+            (n)-shaped float array with desired arrival times of waypoints
+        """
+        next_goal_indices = np.zeros(self.N, dtype=int)
+
+        if select_spatially_closest:
+            upcoming_goal_index = min(
+                np.linalg.norm(
+                    target_pos - np.reshape(cur_pos, (3, 1)), axis=0
+                ).argmin()
+                + 1,
+                target_times.shape[0] - 1,
+            )
+        else:
+            delta_times = target_times - current_time
+            if (delta_times <= 0).all():
+                upcoming_goal_index = target_times.shape[0] - 1
+            else:
+                upcoming_goal_index = np.where(
+                    delta_times > 0, delta_times, np.inf
+                ).argmin()
+
+        remaining_goals_count = target_times.shape[0] - upcoming_goal_index
+        if remaining_goals_count >= self.N:
+            next_goal_indices = np.arange(
+                upcoming_goal_index, upcoming_goal_index + self.N, dtype=int
+            )
+        else:
+            next_goal_indices[0:remaining_goals_count] = np.arange(
+                upcoming_goal_index, target_times.shape[0], dtype=int
+            )
+            next_goal_indices[remaining_goals_count:] = int(target_times.shape[0] - 1)
+
+        return next_goal_indices
+
+    def applyControlInput(self, current_state, action):
+        """
+        current_state : ndarray
+        (12,1) - current_state @ k time on which an action is performed.
+        action : ndarray
+        (4,1) - action to be performed at current state
+
+        Returns:
+        next_state: ndarray
+        (12,1) - next_state @ k+1 time on which an action was performed.
+        """
+        return self.A @ current_state + self.B @ action
+
+    def computeControl(
+        self,
+        cur_state,
+        current_time,
+        target_time,
+        target_pos,
+        target_rpy=None,
+        target_vel=None,
+        target_rpy_rates=None,
+    ):
+        """Computes the control action (as RPMs) for a single drone.
+
+        Parameters
+        ----------
+        current_state : ndarray
+            (12,1) - current_state @ k time.
+        current_time:
+            float with current time
+        target_times:
+            (n)-shaped float array with desired arrival times of waypoints
+        target_pos : ndarray
+            (3,n)-shaped array of floats containing the desired position.
+        target_rpy : ndarray, optional
+            (3,n)-shaped array of floats containing the desired orientation as roll, pitch, yaw.
+        target_vel : ndarray, optional
+            (3,n)-shaped array of floats containing the desired velocity.
+        target_rpy_rates : ndarray, optional
+            (3,n)-shaped array of floats containing the desired roll, pitch, and yaw rates.
+
+        Returns
+        -------
+        ndarray
+            (4,1)-shaped array of integers containing the RPMs to apply to each of the 4 motors.
+        ndarray
+            (3,1)-shaped array of floats containing the next predicted state
+        float
+            Nothing
+
+        """
+        # Check inputs
+        if target_pos.shape[0] != 3:
+            print("\n[ERROR] MPCController reference has incorrect dimension (1)")
+        if target_vel is None:
+            target_vel = np.zeros_like(target_pos)
+        if target_rpy is None:
+            target_rpy = np.zeros_like(target_pos)
+        if target_rpy_rates is None:
+            target_rpy_rates = np.zeros_like(target_pos)
+        if any(
+            s != target_pos.shape
+            for s in [target_vel.shape, target_rpy.shape, target_rpy_rates.shape]
+        ):
+            print("\n[ERROR] MPCController reference has incorrect dimension (2)")
+
+        # Extract next self.N_ref goals from target path
+        next_goal_indices = self._getNextGoalIndices(
+            current_time, target_time, cur_state[0:3], target_pos
+        )
+
+        # Solve MPC
+        self.problem.param_dict["x_ref"].value = np.vstack(
+            [target_pos, target_vel, target_rpy, target_rpy_rates]
+        )[:, next_goal_indices]
+        self.problem.param_dict["x_init"].value = cur_state
+        self.problem.solve(solver=cp.GUROBI)
+        if not (
+            self.problem.status == "optimal"
+            or self.problem.status == "inaccurate optimal"
+        ):
+            raise RuntimeError(
+                f"MPC solver did not find a solution, due to it being {self.problem.status}"
+            )
+
+        # Convert small-signal u into large-signal rpm
+        action_rpm = self._computeRPMfromInputs(self.problem.var_dict["u"].value[:, 0])
+
+        # calculate error translational error between target and state
+        translation_error = np.linalg.norm(
+            self.problem.var_dict["x"].value[0:3, 0]
+            - self.problem.param_dict["x_ref"].value[0:3, 0]
+        )
+
+        return (
+            action_rpm,
+            translation_error,
+            self.problem.param_dict["x_ref"].value[:, 0],
+            next_goal_indices[0],
+        )

@@ -2,6 +2,7 @@ name: mpc_drone
 channels:
   - conda-forge
   - defaults
+  - gurobi
 dependencies:
   - python=3.8
   - ipykernel
@@ -11,3 +12,4 @@ dependencies:
   - numpy
   - tqdm
   - black
+  - gurobi
