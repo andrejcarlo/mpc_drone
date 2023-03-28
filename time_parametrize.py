@@ -1,5 +1,6 @@
 import numpy as np
 from dataclasses import dataclass
+import math
 
 
 @dataclass
@@ -121,6 +122,6 @@ def trajectory_from_path_const_vel(target_path, max_velocity, sampling_time):
 
 
 def trajectory_from_path_bang_bang(
-    target_path, max_velocity, sampling_time, min_speed, max_acc
+    target_path, max_velocity, sampling_time, min_speed=0, max_acc=1
 ):
     pass

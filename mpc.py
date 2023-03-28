@@ -3,6 +3,7 @@ import cvxpy as cp
 import numpy as np
 from math import sin, cos, tan
 
+
 class MPCControl:
     def __init__(
         self,
@@ -46,7 +47,7 @@ class MPCControl:
 
         # matrix to convert inputs (=forces) to rpm^2
         # rpm^2 = K * u
-        self.K = np.array(
+        self.K_inv = np.array(
             [
                 [1 / (4 * k_f), 0, 1 / (2 * k_f), 1 / (4 * k_m)],
                 [1 / (4 * k_f), -1 / (2 * k_f), 0, -1 / (4 * k_m)],
@@ -58,7 +59,7 @@ class MPCControl:
         # operating point for linearization
         self.x_op = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0])
         self.hover_rpm = np.full(4, math.sqrt(m * g / (4 * k_f)))
-        self.u_op = np.matmul(np.linalg.inv(self.K), np.square(self.hover_rpm))
+        self.u_op = np.matmul(np.linalg.inv(self.K_inv), np.square(self.hover_rpm))
 
         #      0, 1, 2, 3,     4,     5,     6,   7,     8,   9, 10,11
         # x = [x, y, z, x_dot, y_dot, z_dot, phi, theta, psi, p, q, r]
@@ -133,7 +134,7 @@ class MPCControl:
                            [0, 0, 0, 0],
                            [0, l/I_x, 0, 0],
                            [0, 0, -l/I_y, 0],
-                           [0, 0, 0, -1/I_z]])
+                           [0, 0, 0, -l/I_z]])
 
         # fmt: on
 
@@ -179,7 +180,7 @@ class MPCControl:
             # Constraints
             constraints += [x[6:9, k] >= np.array([-math.pi, -math.pi / 2, -math.pi])]
             constraints += [x[6:9, k] <= np.array([math.pi, math.pi / 2, math.pi])]
-            constraints += [self.K @ u[:, k] >= -np.matmul(self.K, self.u_op)]
+            constraints += [self.K_inv @ u[:, k] >= -np.matmul(self.K_inv, self.u_op)]
 
         # Inital condition
         constraints += [x[:, 0] == x_init]
@@ -190,7 +191,7 @@ class MPCControl:
         """
         Computes the rpm given the small-signal u_delta around the operating point.
         """
-        return np.sqrt(np.matmul(self.K, self.u_op + u_delta))
+        return np.sqrt(np.matmul(self.K_inv, self.u_op + u_delta))
 
     def _getNextGoalIndices(
         self,
@@ -312,9 +313,10 @@ class MPCControl:
         )
 
         # Solve MPC
-        self.problem.param_dict["x_ref"].value = np.vstack(
+        target_state = np.vstack(
             [target_pos, target_vel, target_rpy, target_rpy_rates]
         )[:, next_goal_indices]
+        self.problem.param_dict["x_ref"].value = target_state
         self.problem.param_dict["x_init"].value = cur_state
         self.problem.solve(solver=cp.GUROBI)
         if not (
@@ -326,7 +328,8 @@ class MPCControl:
             )
 
         # Convert small-signal u into large-signal rpm
-        action_rpm = self._computeRPMfromInputs(self.problem.var_dict["u"].value[:, 0])
+        action = self.problem.var_dict["u"].value[:, 0]
+        action_rpm = self._computeRPMfromInputs(action)
 
         # calculate error translational error between target and state
         translation_error = np.linalg.norm(
@@ -335,7 +338,7 @@ class MPCControl:
         )
 
         return (
-            action_rpm,
+            action,
             translation_error,
             self.problem.param_dict["x_ref"].value[:, 0],
             next_goal_indices[0],
