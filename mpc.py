@@ -2,6 +2,7 @@ import math
 import cvxpy as cp
 import numpy as np
 from math import sin, cos, tan
+from drone import drone_cf2x, drone_m_islam
 
 
 class MPCControl:
@@ -27,40 +28,25 @@ class MPCControl:
         self._buildMPCProblem()
 
     def _buildModelMatrices(self):
-        I_x = 7.5e-3  # self._getURDFParameter("ixx")
-        I_y = 7.5e-3  # self._getURDFParameter("iyy")
-        I_z = 1.3e-2  # self._getURDFParameter("izz")
-        l = 0.23  # self._getURDFParameter("arm")
-        I_r = 6e-05
-        k_f = 3.13e-5  # self._getURDFParameter("kf")
-        k_m = 7.5e-7  # self._getURDFParameter("km")
-        m = 0.65  # self._getURDFParameter("m")
-        g = 9.80665
-        k_tx = 0
-        k_ty = 0
-        k_tz = 0
-        k_rx = 0
-        k_ry = 0
-        k_rz = 0
-        w_r = 0
+        drone = drone_m_islam # drone_cf2x
 
-        # ### Drone cf2x
-        # I_x = 1.4e-5  # self._getURDFParameter("ixx")
-        # I_y = 1.4e-5  # self._getURDFParameter("iyy")
-        # I_z = 2.17e-5  # self._getURDFParameter("izz")
-        # l = 0.0397  # self._getURDFParameter("arm")
-        # I_r = 6e-05
-        # k_f = 3.16e-10  # self._getURDFParameter("kf")
-        # k_m = 7.94e-12  # self._getURDFParameter("km")
-        # m = 0.027  # self._getURDFParameter("m")
-        # g = 9.80665
-        # k_tx = 0
-        # k_ty = 0
-        # k_tz = 0
-        # k_rx = 0
-        # k_ry = 0
-        # k_rz = 0
-        # w_r = 0
+        I_x = drone.I_x
+        I_y = drone.I_y
+        I_z = drone.I_z
+        l = drone.l 
+        I_r = drone.I_r
+        k_f = drone.k_f  
+        k_m = drone.k_m 
+        m = drone.m  
+        g =drone.g
+        k_tx = drone.k_tx
+        k_ty = drone.k_ty
+        k_tz = drone.k_tz
+        k_rx = drone.k_rx
+        k_ry = drone.k_rx
+        k_rz = drone.k_rx
+        w_r = drone.w_r
+
 
         # matrix to convert inputs (=forces) to rpm^2
         # rpm^2 = K * u
