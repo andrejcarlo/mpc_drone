@@ -2,6 +2,7 @@ import math
 import cvxpy as cp
 import numpy as np
 from math import sin, cos, tan
+from scipy import linalg as la
 from drone import drone_cf2x, drone_m_islam
 
 
@@ -10,6 +11,9 @@ class MPCControl:
         self,
         mpc_horizon=3,
         timestep_mpc_stages=0.25,
+        terminal_set_level_c=10,
+        use_terminal_set=True,
+        use_terminal_cost=True,
     ):
         """Common control classes __init__ method.
 
@@ -24,21 +28,24 @@ class MPCControl:
         """
         self.t_s = timestep_mpc_stages  # time step per stage
         self.N = mpc_horizon
+        self.c = terminal_set_level_c
+        self.use_terminal_cost = use_terminal_cost
+        self.use_terminal_set = use_terminal_set
         self._buildModelMatrices()
         self._buildMPCProblem()
 
     def _buildModelMatrices(self):
-        drone = drone_m_islam # drone_cf2x
+        drone = drone_m_islam  # drone_cf2x
 
         I_x = drone.I_x
         I_y = drone.I_y
         I_z = drone.I_z
-        l = drone.l 
+        l = drone.l
         I_r = drone.I_r
-        k_f = drone.k_f  
-        k_m = drone.k_m 
-        m = drone.m  
-        g =drone.g
+        k_f = drone.k_f
+        k_m = drone.k_m
+        m = drone.m
+        g = drone.g
         k_tx = drone.k_tx
         k_ty = drone.k_ty
         k_tz = drone.k_tz
@@ -46,7 +53,6 @@ class MPCControl:
         k_ry = drone.k_rx
         k_rz = drone.k_rx
         w_r = drone.w_r
-
 
         # matrix to convert inputs (=forces) to rpm^2
         # rpm^2 = K * u
@@ -144,11 +150,11 @@ class MPCControl:
         self.A = self.t_s * self.A + np.identity(12)
         self.B = self.t_s * self.B
 
-        # weight cost matrices
-        self.W_output = np.diag(
-            [1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05]
-        )
-        self.W_input = np.identity(4) * 0.01
+        # state cost
+        self.Q = np.diag([1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05])
+        self.Q = 10 * np.identity(12)
+        # input cost
+        self.R = 0.01 * np.identity(4)
 
     def _buildMPCProblem(self):
         cost = 0.0
@@ -162,14 +168,16 @@ class MPCControl:
         x = cp.Variable((12, self.N + 1), name="x")
         u = cp.Variable((4, self.N), name="u")
 
+        # Solve discrete algebraic riccatti equation to construct terminal cost from N -> inf
+        P = la.solve_discrete_are(self.A, self.B, self.Q, self.R)
+
         # For each stage in k = 0, ..., N-1
         for k in range(self.N):
             x_e = x[:, k] - x_ref
 
-            cost += cp.quad_form(x_e, self.W_output)
-
             # Cost
-            cost += cp.quad_form(u[:, k], self.W_input)
+            cost += cp.quad_form(x_e, self.Q)
+            cost += cp.quad_form(u[:, k], self.R)
 
             # System dynamics
             constraints += [x[:, k + 1] == self.A @ x[:, k] + self.B @ u[:, k]]
@@ -178,6 +186,15 @@ class MPCControl:
             constraints += [x[6:9, k] >= np.array([-math.pi, -math.pi / 2, -math.pi])]
             constraints += [x[6:9, k] <= np.array([math.pi, math.pi / 2, math.pi])]
             constraints += [self.K_inv @ u[:, k] >= -np.matmul(self.K_inv, self.u_op)]
+
+        # terminal cost addition
+        Vf = cp.quad_form(x[:, self.N] - x_ref, P)
+        if self.use_terminal_cost:
+            cost += Vf
+
+        # terminal set constraint
+        if self.use_terminal_set:
+            constraints += [Vf <= self.c]
 
         # Inital condition
         constraints += [x[:, 0] == x_init]

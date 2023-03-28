@@ -47,12 +47,12 @@ def simulate(controller, x_init, x_target, dt=0.05, T=50, N=3, plot=False):
 
 
 if __name__ == "__main__":
-    dt = 0.25  # Sampling period
+    dt = 0.10  # Sampling period
     N = 20  # MPC Horizon
     T = 50  # Duration of simulation
     x_init = np.zeros(12)  # Initial conditions
     x_target = np.zeros(12)  # State to reach
-    x_target[0:3] = np.array([1, 1, 1])
+    x_target[0:3] = np.array([10, 10, 10])
 
     print("Initial state is ", x_init)
     print("Target state to reach is ", x_target)
@@ -61,7 +61,13 @@ if __name__ == "__main__":
     ctrl = MPCControl(
         mpc_horizon=N,
         timestep_mpc_stages=dt,
+        terminal_set_level_c=100,
+        use_terminal_set=True,
+        use_terminal_cost=True,
     )
+
+    print("Terminal cost ", ctrl.use_terminal_cost)
+    print("Terminal set ", ctrl.use_terminal_set)
 
     states, inputs, plans, timesteps = simulate(
         controller=ctrl, x_init=x_init, x_target=x_target, dt=dt, T=T, N=N, plot=True
