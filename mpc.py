@@ -7,8 +7,7 @@ from math import sin, cos, tan
 class MPCControl:
     def __init__(
         self,
-        N=3,
-        timestep_reference=None,
+        mpc_horizon=3,
         timestep_mpc_stages=0.25,
     ):
         """Common control classes __init__ method.
@@ -23,9 +22,9 @@ class MPCControl:
 
         """
         self.t_s = timestep_mpc_stages  # time step per stage
-        self.N = N
+        self.N = mpc_horizon
         self._buildModelMatrices()
-        self._buildMPCProblem(timestep_reference)
+        self._buildMPCProblem()
 
     def _buildModelMatrices(self):
         I_x = 7.5e-3  # self._getURDFParameter("ixx")
@@ -44,6 +43,24 @@ class MPCControl:
         k_ry = 0
         k_rz = 0
         w_r = 0
+
+        # ### Drone cf2x
+        # I_x = 1.4e-5  # self._getURDFParameter("ixx")
+        # I_y = 1.4e-5  # self._getURDFParameter("iyy")
+        # I_z = 2.17e-5  # self._getURDFParameter("izz")
+        # l = 0.0397  # self._getURDFParameter("arm")
+        # I_r = 6e-05
+        # k_f = 3.16e-10  # self._getURDFParameter("kf")
+        # k_m = 7.94e-12  # self._getURDFParameter("km")
+        # m = 0.027  # self._getURDFParameter("m")
+        # g = 9.80665
+        # k_tx = 0
+        # k_ty = 0
+        # k_tz = 0
+        # k_rx = 0
+        # k_ry = 0
+        # k_rz = 0
+        # w_r = 0
 
         # matrix to convert inputs (=forces) to rpm^2
         # rpm^2 = K * u
@@ -135,7 +152,6 @@ class MPCControl:
                            [0, l/I_x, 0, 0],
                            [0, 0, -l/I_y, 0],
                            [0, 0, 0, -l/I_z]])
-
         # fmt: on
 
         # time discretize system
@@ -148,19 +164,12 @@ class MPCControl:
         )
         self.W_input = np.identity(4) * 0.01
 
-    def _buildMPCProblem(self, timestep_reference=None):
-        if timestep_reference == None:
-            timestep_reference = self.t_s
-        elif timestep_reference % self.t_s != 0:
-            raise Exception(
-                "MPC Controller: timestep_reference must be whole-number multiple of the optimization time step"
-            )
-
+    def _buildMPCProblem(self):
         cost = 0.0
         constraints = []
 
         # Parameters
-        x_ref = cp.Parameter((12, self.N), name="x_ref")
+        x_ref = cp.Parameter((12), name="x_ref")
         x_init = cp.Parameter((12), name="x_init")
 
         # Create the optimization variables
@@ -169,7 +178,9 @@ class MPCControl:
 
         # For each stage in k = 0, ..., N-1
         for k in range(self.N):
-            cost += cp.quad_form(x[:, k + 1] - x_ref[:, k], self.W_output)
+            x_e = x[:, k] - x_ref
+
+            cost += cp.quad_form(x_e, self.W_output)
 
             # Cost
             cost += cp.quad_form(u[:, k], self.W_input)
@@ -193,131 +204,10 @@ class MPCControl:
         """
         return np.sqrt(np.matmul(self.K_inv, self.u_op + u_delta))
 
-    def _getNextGoalIndices(
-        self,
-        current_time,
-        target_times,
-        cur_pos,
-        target_pos,
-        select_spatially_closest=False,
-    ):
-        """
-        Computes the upcoming next self.N waypoints to target and returns their indices.
-        current_time:
-            float with current time
-        target_times:
-            (n)-shaped float array with desired arrival times of waypoints
-        """
-        next_goal_indices = np.zeros(self.N, dtype=int)
+    def computeControl(self, x_init, x_target):
+        self.problem.param_dict["x_init"].value = x_init
+        self.problem.param_dict["x_ref"].value = x_target
 
-        if select_spatially_closest:
-            upcoming_goal_index = min(
-                np.linalg.norm(
-                    target_pos - np.reshape(cur_pos, (3, 1)), axis=0
-                ).argmin()
-                + 1,
-                target_times.shape[0] - 1,
-            )
-        else:
-            delta_times = target_times - current_time
-            if (delta_times <= 0).all():
-                upcoming_goal_index = target_times.shape[0] - 1
-            else:
-                upcoming_goal_index = np.where(
-                    delta_times > 0, delta_times, np.inf
-                ).argmin()
-
-        remaining_goals_count = target_times.shape[0] - upcoming_goal_index
-        if remaining_goals_count >= self.N:
-            next_goal_indices = np.arange(
-                upcoming_goal_index, upcoming_goal_index + self.N, dtype=int
-            )
-        else:
-            next_goal_indices[0:remaining_goals_count] = np.arange(
-                upcoming_goal_index, target_times.shape[0], dtype=int
-            )
-            next_goal_indices[remaining_goals_count:] = int(target_times.shape[0] - 1)
-
-        return next_goal_indices
-
-    def applyControlInput(self, current_state, action):
-        """
-        current_state : ndarray
-        (12,1) - current_state @ k time on which an action is performed.
-        action : ndarray
-        (4,1) - action to be performed at current state
-
-        Returns:
-        next_state: ndarray
-        (12,1) - next_state @ k+1 time on which an action was performed.
-        """
-        return self.A @ current_state + self.B @ action
-
-    def computeControl(
-        self,
-        cur_state,
-        current_time,
-        target_time,
-        target_pos,
-        target_rpy=None,
-        target_vel=None,
-        target_rpy_rates=None,
-    ):
-        """Computes the control action (as RPMs) for a single drone.
-
-        Parameters
-        ----------
-        current_state : ndarray
-            (12,1) - current_state @ k time.
-        current_time:
-            float with current time
-        target_times:
-            (n)-shaped float array with desired arrival times of waypoints
-        target_pos : ndarray
-            (3,n)-shaped array of floats containing the desired position.
-        target_rpy : ndarray, optional
-            (3,n)-shaped array of floats containing the desired orientation as roll, pitch, yaw.
-        target_vel : ndarray, optional
-            (3,n)-shaped array of floats containing the desired velocity.
-        target_rpy_rates : ndarray, optional
-            (3,n)-shaped array of floats containing the desired roll, pitch, and yaw rates.
-
-        Returns
-        -------
-        ndarray
-            (4,1)-shaped array of integers containing the RPMs to apply to each of the 4 motors.
-        ndarray
-            (3,1)-shaped array of floats containing the next predicted state
-        float
-            Nothing
-
-        """
-        # Check inputs
-        if target_pos.shape[0] != 3:
-            print("\n[ERROR] MPCController reference has incorrect dimension (1)")
-        if target_vel is None:
-            target_vel = np.zeros_like(target_pos)
-        if target_rpy is None:
-            target_rpy = np.zeros_like(target_pos)
-        if target_rpy_rates is None:
-            target_rpy_rates = np.zeros_like(target_pos)
-        if any(
-            s != target_pos.shape
-            for s in [target_vel.shape, target_rpy.shape, target_rpy_rates.shape]
-        ):
-            print("\n[ERROR] MPCController reference has incorrect dimension (2)")
-
-        # Extract next self.N_ref goals from target path
-        next_goal_indices = self._getNextGoalIndices(
-            current_time, target_time, cur_state[0:3], target_pos
-        )
-
-        # Solve MPC
-        target_state = np.vstack(
-            [target_pos, target_vel, target_rpy, target_rpy_rates]
-        )[:, next_goal_indices]
-        self.problem.param_dict["x_ref"].value = target_state
-        self.problem.param_dict["x_init"].value = cur_state
         self.problem.solve(solver=cp.GUROBI)
         if not (
             self.problem.status == "optimal"
@@ -327,19 +217,9 @@ class MPCControl:
                 f"MPC solver did not find a solution, due to it being {self.problem.status}"
             )
 
-        # Convert small-signal u into large-signal rpm
-        action = self.problem.var_dict["u"].value[:, 0]
-        action_rpm = self._computeRPMfromInputs(action)
-
-        # calculate error translational error between target and state
-        translation_error = np.linalg.norm(
-            self.problem.var_dict["x"].value[0:3, 0]
-            - self.problem.param_dict["x_ref"].value[0:3, 0]
-        )
-
+        # We return the MPC input and the next state (and also the plan for visualization)
         return (
-            action,
-            translation_error,
-            self.problem.param_dict["x_ref"].value[:, 0],
-            next_goal_indices[0],
+            self.problem.var_dict["u"][:, 0].value,
+            self.problem.var_dict["x"][:, 1].value,
+            self.problem.var_dict["x"][:, :].value,
         )
