@@ -5,7 +5,6 @@ import numpy as np
 def plot_3d_control(reference, actual):
     fig = plt.figure()
     ax = fig.add_subplot(projection="3d")
-    fig.tight_layout()
 
     ax.plot(
         reference[:, 0],
@@ -26,7 +25,7 @@ def plot_3d_control(reference, actual):
         linestyle="-",
         zorder=10,
     )
-    ax.margins(0.01)
+    # ax.margins(0.01)
     ax.set_box_aspect((1, 1, 1))
     # ax.get_xaxis().set_ticklabels([])
     # ax.get_yaxis().set_ticklabels([])
@@ -35,6 +34,7 @@ def plot_3d_control(reference, actual):
     ax.set_ylabel("y")
     ax.set_zlabel("z")
     ax.legend()
+    fig.tight_layout()
 
 
 def plot_single_state(state, T, label):
@@ -110,38 +110,24 @@ def plot_action_history(filename, u, T):
     plt.savefig(filename, format="png")
 
 
-def plot_trajectories(filename, x, u, T):
-    f = plt.figure(figsize=(12, 6))
+def plot_terminal_cost_lyupanov(Vf, l, T, c):
+    """
+    Plots terminal set and stage cost as a function of time.
+    Inputs:
+        Vf = ndarray(1,T)
+        l = ndarray(1,T)
 
-    # Plot position
-    ax2 = f.add_subplot(311)
-    x1 = x[0, :]
-    plt.plot(x1)
-    plt.ylabel(r"$p$ $(m)$", fontsize=14)
-    plt.yticks([np.min(x1), 0, np.max(x1)])
-    plt.ylim([np.min(x1) - 0.1, np.max(x1) + 0.1])
-    plt.xlim([0, T])
+    Inequality
+    Vf(x_plus) - Vf(x) < -l(x,u)
+    """
+    Vf_diff = Vf[1:] - Vf[0:-1]
+    l_diff = l[0:-1]
+
+    f3 = plt.figure(figsize=(12, 8))
+
+    plt.plot(range(0, T - 1), Vf_diff, color="r", label=r"$V_f(f(x,u)) - V_f(x)$")
+    plt.plot(range(0, T - 1), -l_diff, color="g", label=r"$-l(x,u)$")
+    plt.plot(range(0, T - 1), Vf[1:], color="b", label=r"$V_f(f(x,u))$")
+    plt.axhline(y=c, color="m", label=r"$c$ level set curve")
+    plt.legend()
     plt.grid()
-
-    # Plot velocity
-    ax3 = plt.subplot(3, 1, 2)
-    x2 = x[1, :]
-    plt.plot(x2)
-    plt.yticks([np.min(x2), 0, np.max(x2)])
-    plt.ylim([np.min(x2) - 0.1, np.max(x2) + 0.1])
-    plt.xlim([0, T])
-    plt.ylabel(r"$v$ $(m/s)$", fontsize=14)
-    plt.grid()
-
-    # Plot acceleration (input)
-    ax1 = plt.subplot(3, 1, 3)
-
-    plt.plot(u[0, :])
-    plt.ylabel(r"$a$ $(m/s^2)$", fontsize=14)
-    plt.yticks([np.min(u), 0, np.max(u)])
-    plt.ylim([np.min(u) - 0.1, np.max(u) + 0.1])
-    plt.xlabel(r"$t$", fontsize=14)
-    plt.tight_layout()
-    plt.grid()
-    plt.xlim([0, T])
-    plt.show()

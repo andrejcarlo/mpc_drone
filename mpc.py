@@ -156,6 +156,9 @@ class MPCControl:
         # input cost
         self.R = 0.01 * np.identity(4)
 
+        # Solve discrete algebraic ricatii eq
+        self.P = la.solve_discrete_are(self.A, self.B, self.Q, self.R)
+
     def _buildMPCProblem(self):
         cost = 0.0
         constraints = []
@@ -167,9 +170,6 @@ class MPCControl:
         # Create the optimization variables
         x = cp.Variable((12, self.N + 1), name="x")
         u = cp.Variable((4, self.N), name="u")
-
-        # Solve discrete algebraic riccatti equation to construct terminal cost from N -> inf
-        P = la.solve_discrete_are(self.A, self.B, self.Q, self.R)
 
         # For each stage in k = 0, ..., N-1
         for k in range(self.N):
@@ -187,8 +187,8 @@ class MPCControl:
             constraints += [x[6:9, k] <= np.array([math.pi, math.pi / 2, math.pi])]
             constraints += [self.K_inv @ u[:, k] >= -np.matmul(self.K_inv, self.u_op)]
 
-        # terminal cost addition
-        Vf = cp.quad_form(x[:, self.N] - x_ref, P)
+        # terminal cost addition (estimate cost N->inf)
+        Vf = cp.quad_form(x[:, self.N] - x_ref, self.P)
         if self.use_terminal_cost:
             cost += Vf
 
@@ -211,7 +211,7 @@ class MPCControl:
         self.problem.param_dict["x_init"].value = x_init
         self.problem.param_dict["x_ref"].value = x_target
 
-        self.problem.solve(solver=cp.GUROBI)
+        self.problem.solve(solver=cp.GUROBI, verbose=False)
         if not (
             self.problem.status == "optimal"
             or self.problem.status == "inaccurate optimal"
