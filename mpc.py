@@ -4,7 +4,8 @@ import numpy as np
 from math import sin, cos, tan
 from scipy import linalg as la
 from drone import drone_cf2x, drone_m_islam
-
+import control
+from scipy.linalg import solve_sylvester
 
 class MPCControl:
     def __init__(
@@ -158,6 +159,16 @@ class MPCControl:
 
         # Solve discrete algebraic ricatii eq
         self.P = la.solve_discrete_are(self.A, self.B, self.Q, self.R)
+
+        # Solve Lyapunov P:
+        P,L,K = control.dare( self.A, self.B, self.Q, self.R, S=None, E=None)
+        Ak =  self.A + self.B@K
+        Qk =  self.Q + K.transpose()@ self.R@K
+        Ak_inv = np.linalg.inv(Ak)
+        Ak_T = np.transpose(Ak)
+        C = -2 * np.matmul(Qk, Ak_inv)
+        self.P_l = solve_sylvester(Ak_T, Ak_inv, C)
+
 
     def _buildMPCProblem(self):
         cost = 0.0
