@@ -15,3 +15,5 @@ dependencies:
   - gurobi
   - tqdm
   - scipy
+  - control
+  - slycot

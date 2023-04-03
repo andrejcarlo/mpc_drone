@@ -3,6 +3,8 @@ import cvxpy as cp
 import numpy as np
 from math import sin, cos, tan
 from scipy import linalg as la
+import control as ct
+
 from drone import drone_cf2x, drone_m_islam
 
 
@@ -55,8 +57,8 @@ class MPCControl:
         w_r = drone.w_r
 
         # matrix to convert inputs (=forces) to rpm^2
-        # rpm^2 = K * u
-        self.K_inv = np.array(
+        # rpm^2 = W * u
+        self.W_inv = np.array(
             [
                 [1 / (4 * k_f), 0, 1 / (2 * k_f), 1 / (4 * k_m)],
                 [1 / (4 * k_f), -1 / (2 * k_f), 0, -1 / (4 * k_m)],
@@ -68,7 +70,7 @@ class MPCControl:
         # operating point for linearization
         self.x_op = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0])
         self.hover_rpm = np.full(4, math.sqrt(m * g / (4 * k_f)))
-        self.u_op = np.matmul(np.linalg.inv(self.K_inv), np.square(self.hover_rpm))
+        self.u_op = np.matmul(np.linalg.inv(self.W_inv), np.square(self.hover_rpm))
 
         #      0, 1, 2, 3,     4,     5,     6,   7,     8,   9, 10,11
         # x = [x, y, z, x_dot, y_dot, z_dot, phi, theta, psi, p, q, r]
@@ -157,7 +159,10 @@ class MPCControl:
         self.R = 0.01 * np.identity(4)
 
         # Solve discrete algebraic ricatii eq
-        self.P = la.solve_discrete_are(self.A, self.B, self.Q, self.R)
+        # P = dare solution
+        # L = closed loop eigenvalues L
+        # K = state-feedback gain
+        self.P, self.L, self.K = ct.dare(self.A, self.B, self.Q, self.R)
 
     def _buildMPCProblem(self):
         cost = 0.0
@@ -183,9 +188,9 @@ class MPCControl:
             constraints += [x[:, k + 1] == self.A @ x[:, k] + self.B @ u[:, k]]
 
             # Constraints
-            constraints += [x[6:9, k] >= np.array([-math.pi, -math.pi / 2, -math.pi])]
-            constraints += [x[6:9, k] <= np.array([math.pi, math.pi / 2, math.pi])]
-            constraints += [self.K_inv @ u[:, k] >= -np.matmul(self.K_inv, self.u_op)]
+            # constraints += [x[6:9, k] >= np.array([-math.pi, -math.pi / 2, -math.pi])]
+            # constraints += [x[6:9, k] <= np.array([math.pi, math.pi / 2, math.pi])]
+            # constraints += [self.W_inv @ u[:, k] >= -np.matmul(self.W_inv, self.u_op)]
 
         # terminal cost addition (estimate cost N->inf)
         Vf = cp.quad_form(x[:, self.N] - x_ref, self.P)
@@ -205,7 +210,7 @@ class MPCControl:
         """
         Computes the rpm given the small-signal u_delta around the operating point.
         """
-        return np.sqrt(np.matmul(self.K_inv, self.u_op + u_delta))
+        return np.sqrt(np.matmul(self.W_inv, self.u_op + u_delta))
 
     def computeControl(self, x_init, x_target):
         self.problem.param_dict["x_init"].value = x_init

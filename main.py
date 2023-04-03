@@ -75,7 +75,7 @@ def simulate(
 
 if __name__ == "__main__":
     dt = 0.10  # Sampling period
-    N = 13  # MPC Horizon
+    N = 20  # MPC Horizon
     T = 100  # Duration of simulation
     x_init = np.zeros(12)  # Initial conditions
     x_target = np.zeros(12)  # State to reach
@@ -89,10 +89,13 @@ if __name__ == "__main__":
     ctrl = MPCControl(
         mpc_horizon=N,
         timestep_mpc_stages=dt,
-        terminal_set_level_c=2000,
+        terminal_set_level_c=100,
         use_terminal_set=True,
         use_terminal_cost=True,
     )
+
+    print("K is ", ctrl.K)
+    print("L is ", ctrl.L)
 
     print("Terminal cost ", ctrl.use_terminal_cost)
     print("Terminal set ", ctrl.use_terminal_set)
@@ -131,3 +134,13 @@ if __name__ == "__main__":
 # Initial condition in xf, vs init condition outside of xf
 
 # Verify the stability of the nonlinear system numerically
+
+
+# Questions to ask prof:
+# Why do we get the terminal cost bigger than the stage cost in the graph (the red bump)
+# Do we need to verify the stability of the nonlinear system numerically?
+# The choice of c and horizon is dependent on the problem to solve.
+# #Ex: reference is at a different location
+## is there any way to solve for c for different locations?
+## in the example that you need to follow multiple targets, this c would need to change?
+## What would be the drawback if we had a really large c
