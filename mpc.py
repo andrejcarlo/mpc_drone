@@ -6,7 +6,8 @@ from scipy import linalg as la
 import control as ct
 
 from drone import drone_cf2x, drone_m_islam
-
+import control
+from scipy.linalg import solve_sylvester
 
 class MPCControl:
     def __init__(
@@ -163,6 +164,22 @@ class MPCControl:
         # L = closed loop eigenvalues L
         # K = state-feedback gain
         self.P, self.L, self.K = ct.dare(self.A, self.B, self.Q, self.R)
+
+        # Solve Lyapunov P:
+        P,L,K = control.dare( self.A, self.B, self.Q, self.R, S=None, E=None)
+        Ak =  self.A + self.B@K
+        Qk =  self.Q + K.transpose()@ self.R@K
+        Ak_inv = np.linalg.inv(Ak)
+        Ak_T = np.transpose(Ak)
+        C = -2 * np.matmul(Qk, Ak_inv)
+        self.P_l = solve_sylvester(Ak_T, Ak_inv, C)
+
+
+    def _getPK(self):
+        P,L,K = control.dare( self.A, self.B, self.Q, self.R, S=None, E=None)
+        return P,K
+    def _get_ulb(self):
+        return self.K_inv,-np.matmul(self.K_inv, self.u_op)
 
     def _buildMPCProblem(self):
         cost = 0.0
