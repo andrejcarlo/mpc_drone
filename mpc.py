@@ -170,6 +170,12 @@ class MPCControl:
         self.P_l = solve_sylvester(Ak_T, Ak_inv, C)
 
 
+    def _getPK(self):
+        P,L,K = control.dare( self.A, self.B, self.Q, self.R, S=None, E=None)
+        return P,K
+    def _get_ulb(self):
+        return self.K_inv,-np.matmul(self.K_inv, self.u_op)
+
     def _buildMPCProblem(self):
         cost = 0.0
         constraints = []
