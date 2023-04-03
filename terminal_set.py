@@ -72,15 +72,14 @@ def _check_state_c(
     return state_within_range
 
 
-def calculate_c(ctrl, P, x_target, c_init=2000):
+def calculate_c(ctrl, x_target, c_init=2000, use_state_constraints=False):
     c = c_init
     vertices = calculate_vertices_bbox(c, ctrl.P, x_target)
-    state_within_range = _check_state_c(ctrl, vertices)
+    state_within_range = _check_state_c(ctrl, vertices, use_state_constraints)
 
     # continue to decrease c while checking if we satisfy the constraints
     while (not state_within_range) and (c > 1e-3):
         c = c / 1.01
         vertices = calculate_vertices_bbox(c, ctrl.P, x_target)
-        state_within_range = _check_state_c(ctrl, vertices)
-
+        state_within_range = _check_state_c(ctrl, vertices, use_state_constraints)
     return c

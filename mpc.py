@@ -148,7 +148,7 @@ class MPCControl:
                            [0, l/I_x, 0, 0],
                            [0, 0, -l/I_y, 0],
                            [0, 0, 0, -l/I_z]])
-        
+
         self.A = np.array([[0,0,0,1,0,0,0,0,0,0,0,0],
         [0,0,0,0,1,0,0,0,0,0,0,0],
         [0,0,0,0,0,1,0,0,0,0,0,0],
@@ -232,9 +232,9 @@ class MPCControl:
             constraints += [x[:, k + 1] == self.A @ x[:, k] + self.B @ u[:, k]]
 
             # Constraints
-            # constraints += [x[6:9, k] >= np.array([-math.pi, -math.pi / 2, -math.pi])]
-            # constraints += [x[6:9, k] <= np.array([math.pi, math.pi / 2, math.pi])]
-            # constraints += [self.W_inv @ u[:, k] >= -np.matmul(self.W_inv, self.u_op)]
+            constraints += [x[6:9, k] >= np.array([-math.pi, -math.pi / 2, -math.pi])]
+            constraints += [x[6:9, k] <= np.array([math.pi, math.pi / 2, math.pi])]
+            constraints += [self.W_inv @ u[:, k] >= -np.matmul(self.W_inv, self.u_op)]
 
         # terminal cost addition (estimate cost N->inf)
         Vf = cp.quad_form(x[:, self.N] - x_ref, self.P)
