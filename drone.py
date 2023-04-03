@@ -20,6 +20,7 @@ class Drone:
     k_rz: float
     w_r: float
 
+
 # Drone from pybullet gym assets
 drone_cf2x = Drone(
     I_x=1.4e-5,
@@ -51,11 +52,11 @@ drone_m_islam = Drone(
     k_m=7.5e-7,
     m=0.65,
     g=9.80665,
-    k_tx=0,
-    k_ty=0,
-    k_tz=0,
-    k_rx=0,
-    k_ry=0,
-    k_rz=0,
-    w_r=0,
+    k_tx=0.,
+    k_ty=0.,
+    k_tz=0.,
+    k_rx=0.,
+    k_ry=0.,
+    k_rz=0.,
+    w_r=0.,
 )

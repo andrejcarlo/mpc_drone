@@ -148,6 +148,32 @@ class MPCControl:
                            [0, l/I_x, 0, 0],
                            [0, 0, -l/I_y, 0],
                            [0, 0, 0, -l/I_z]])
+        
+        self.A = np.array([[0,0,0,1,0,0,0,0,0,0,0,0],
+        [0,0,0,0,1,0,0,0,0,0,0,0],
+        [0,0,0,0,0,1,0,0,0,0,0,0],
+        [0,0,0,-k_tx/m,0,0,(u[0]*(math.cos(x[6])*math.sin(x[8]) - math.cos(x[8])*math.sin(x[6])*math.sin(x[7])))/m,(u[0]*math.cos(x[6])*math.cos(x[7])*math.cos(x[8]))/m,(u[0]*(math.cos(x[8])*math.sin(x[6]) - math.cos(x[6])*math.sin(x[7])*math.sin(x[8])))/m,0,0,0],
+        [0,0,0,0,-k_ty/m,0,-(u[0]*(math.cos(x[6])*math.cos(x[8]) + math.sin(x[6])*math.sin(x[7])*math.sin(x[8])))/m,(u[0]*math.cos(x[6])*math.cos(x[7])*math.sin(x[8]))/m,(u[0]*(math.sin(x[6])*math.sin(x[8]) + math.cos(x[6])*math.cos(x[8])*math.sin(x[7])))/m,0,0,0],
+        [0,0,0,0,0,-k_tz/m,-(u[0]*math.cos(x[7])*math.sin(x[6]))/m,-(u[0]*math.cos(x[6])*math.sin(x[7]))/m,0,0,0,0],
+        [0,0,0,0,0,0,x[10]*math.cos(x[6])*math.tan(x[7]) - x[11]*math.sin(x[6])*math.tan(x[7]),x[11]*math.cos(x[6])*(math.tan(x[7])**2 + 1) + x[10]*math.sin(x[6])*(math.tan(x[7])**2 + 1),0,1,math.sin(x[6])*math.tan(x[7]),math.cos(x[6])*math.tan(x[7])],
+        [0,0,0,0,0,0,- x[11]*math.cos(x[6]) - x[10]*math.sin(x[6]),0,0,0,math.cos(x[6]),-math.sin(x[6])],
+        [0,0,0,0,0,0,(x[10]*math.cos(x[6]))/math.cos(x[7]) - (x[11]*math.sin(x[6]))/math.cos(x[7]),(x[11]*math.cos(x[6])*math.sin(x[7]))/math.cos(x[7])**2 + (x[10]*math.sin(x[6])*math.sin(x[7]))/math.cos(x[7])**2,0,0,math.sin(x[6])/math.cos(x[7]),math.cos(x[6])/math.cos(x[7])],
+        [0,0,0,0,0,0,0,0,0,-k_rx/I_x,-(I_r*w_r - I_y*x[11] + I_z*x[11])/I_x,(I_y*x[10] - I_z*x[10])/I_x],
+        [0,0,0,0,0,0,0,0,0,-(I_r*w_r + I_x*x[11] - I_z*x[11])/I_y,-k_ry/I_y,-(I_x*x[9] - I_z*x[9])/I_y],
+        [0,0,0,0,0,0,0,0,0,(I_x*x[10] - I_y*x[10])/I_z,(I_x*x[9] - I_y*x[9])/I_z,-k_rz/I_z]])
+        self.B = np.array([[0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [(math.sin(x[6])*math.sin(x[8]) + math.cos(x[6])*math.cos(x[8])*math.sin(x[7]))/m,0,0,0],
+        [-(math.cos(x[8])*math.sin(x[6]) - math.cos(x[6])*math.sin(x[7])*math.sin(x[8]))/m,0,0,0],
+        [(math.cos(x[6])*math.cos(x[7]))/m,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,0,0,0],
+        [0,-l/I_x,0,0],
+        [0,0,-l/I_y,0],
+        [0,0,0,-l/I_z]])
+
         # fmt: on
 
         # time discretize system
@@ -156,7 +182,7 @@ class MPCControl:
 
         # state cost
         self.Q = np.diag([1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05])
-        self.Q = 10 * np.identity(12)
+        # self.Q = 0.1 * np.identity(12)
         # input cost
         self.R = 0.01 * np.identity(4)
 

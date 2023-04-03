@@ -11,7 +11,7 @@ N = 20  # MPC Horizon
 T = 100  # Duration of simulation
 x_init = np.zeros(12)  # Initial conditions
 x_target = np.zeros(12)  # State to reach
-x_target[0:3] = np.array([0.0, 0.0, 0.0])
+x_target[0:3] = np.array([1.0, 1.0, 1.0])
 
 
 ctrl = MPCControl(
@@ -108,37 +108,39 @@ def _check_state_c(c, vertices):
     for vertex in vertices:
         # state constraints
         # phi, thetha, psi
-        if (
-            vertex[6] < -math.pi
-            or vertex[6] > math.pi
-            or vertex[7] < -1 / 2 * math.pi
-            or vertex[7] > 1 / 2 * math.pi
-            or vertex[8] < -math.pi
-            or vertex[8] > math.pi
-        ):
-            state_within_range = False  # set the boolean variable to False if a vector is outside the range
-            break
+        # if (
+        #     vertex[6] < -math.pi
+        #     or vertex[6] > math.pi
+        #     or vertex[7] < -1 / 2 * math.pi
+        #     or vertex[7] > 1 / 2 * math.pi
+        #     or vertex[8] < -math.pi
+        #     or vertex[8] > math.pi
+        # ):
+        #     state_within_range = False  # set the boolean variable to False if a vector is outside the range
+        #     break
 
         # print("Input constraint at vertex LHS ", ctrl.W_inv @ (K @ vertex))
-        # print("Input constraint at vertex RHS ", -(ctrl.W_inv @ ctrl.u_op))
+        # print("Input constraint at vertex RHS ", ulb)
         # input constraints rpm
         if np.all((ctrl.W_inv @ (K @ vertex)) < ulb):
             state_within_range = False  # set the boolean variable to False if a vector is outside the range
             break
+        # print("Satisfied")
     return state_within_range
 
 
-c = 2000
-vertices = calculate_vertices_bbox(c, P)
-state_within_range = _check_state_c(c, vertices)
-
-# continue to decrease c while checking if we satisfy the constraints
-while (not state_within_range) and (c > 1e-3):
-    c = c / 1.01
+def calculate_c():
+    c = 2000
     vertices = calculate_vertices_bbox(c, P)
     state_within_range = _check_state_c(c, vertices)
 
-print(c)
+    # continue to decrease c while checking if we satisfy the constraints
+    while (not state_within_range) and (c > 1e-3):
+        c = c / 1.01
+        vertices = calculate_vertices_bbox(c, P)
+        state_within_range = _check_state_c(c, vertices)
+
+    return c
 
 
 # check  = np.dot((vertex[0]-x_target).T, np.dot(P, vertex[0]-x_target))/2
