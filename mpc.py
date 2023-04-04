@@ -46,6 +46,7 @@ class MPCControl:
     @c_level.setter
     def c_level(self, value: float):
         self._c_level = value
+        self._beta = None
         # rebuild mpc problem with new constraints
         self._buildMPCProblem()
 
@@ -56,6 +57,7 @@ class MPCControl:
     @beta.setter
     def beta(self, value: float):
         self._beta = value
+        self._c_level = None
         # rebuild mpc problem with new constraints
         self._buildMPCProblem()
 
@@ -249,7 +251,7 @@ class MPCControl:
         # terminal cost addition (estimate cost N->inf)
         Vf = cp.quad_form(x[:, self.N] - x_ref, self.P)
 
-        if (self.use_terminal) == 1 and self.c_level:
+        if self.c_level:
             # terminal cost
             cost += Vf
 
@@ -258,7 +260,7 @@ class MPCControl:
             # constraints += [x[:, self.N] == x_ref]
             constraints += [Vf <= self.c_level]
 
-        if (self.use_terminal == 2) and self.beta:
+        if self.beta:
             # terminal cost weighting approximates terminal set
             cost += self.beta * Vf
 

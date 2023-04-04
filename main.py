@@ -14,6 +14,12 @@ import terminal_set
 
 
 def simulate(controller, x_init, x_target, T=50, plot=False, plots_suffix=""):
+    # Some checks
+    # if (controller.use_terminal == 2) and not controller.beta:
+    #     print("Using default mpc config perhaps you forgot to set beta!")
+    # if (controller.use_terminal == 1) and not controller.c_level:
+    #     print("Using default mpc config perhaps you forgot to set c_level!")
+
     # Initialise the output arrays
     x_real = np.zeros((12, T + 1))
     x_all = np.zeros((12, controller.N + 1, T + 1))
