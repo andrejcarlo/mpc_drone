@@ -26,7 +26,11 @@ def plot_3d_control(reference, actual):
         zorder=10,
     )
     # ax.margins(0.01)
+    ax.autoscale(False)
     ax.set_box_aspect((1, 1, 1))
+    ax.set_xlim(actual[0, 0], reference[-1, 0])
+    ax.set_ylim(actual[0, 1], reference[-1, 1])
+    ax.set_zlim(actual[0, 2], reference[-1, 2])
     # ax.get_xaxis().set_ticklabels([])
     # ax.get_yaxis().set_ticklabels([])
     # ax.get_zaxis().set_ticklabels([])
@@ -110,7 +114,7 @@ def plot_action_history(filename, u, T):
     plt.savefig(filename, format="png")
 
 
-def plot_terminal_cost_lyupanov(Vf, l, T, c):
+def plot_terminal_cost_lyupanov(Vf, l, T, c_level):
     """
     Plots terminal set and stage cost as a function of time.
     Inputs:
@@ -128,6 +132,8 @@ def plot_terminal_cost_lyupanov(Vf, l, T, c):
     plt.plot(range(0, T - 1), Vf_diff, color="r", label=r"$V_f(f(x,u)) - V_f(x)$")
     plt.plot(range(0, T - 1), -l_diff, color="g", label=r"$-l(x,u)$")
     plt.plot(range(0, T - 1), Vf[1:], color="b", label=r"$V_f(f(x,u))$")
-    plt.axhline(y=c, color="m", label=r"$c$ level set curve")
+    plt.plot(range(0, T - 1), Vf[0:-1], color="m", label=r"$V_f(x)$")
+    if c_level:
+        plt.axhline(y=c_level, color="c", label=r"$c$ level set curve")
     plt.legend()
     plt.grid()

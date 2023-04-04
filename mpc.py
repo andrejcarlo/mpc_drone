@@ -15,9 +15,7 @@ class MPCControl:
         self,
         mpc_horizon=3,
         timestep_mpc_stages=0.25,
-        terminal_set_level_c=10,
-        use_terminal_set=True,
-        use_terminal_cost=True,
+        use_terminal=0,
     ):
         """Common control classes __init__ method.
 
@@ -30,12 +28,35 @@ class MPCControl:
         N : optimization horizon
 
         """
-        self.t_s = timestep_mpc_stages  # time step per stage
+        self.dt = timestep_mpc_stages  # time step per stage
         self.N = mpc_horizon
-        self.c = terminal_set_level_c
-        self.use_terminal_cost = use_terminal_cost
-        self.use_terminal_set = use_terminal_set
+        self.use_terminal = use_terminal
+
+        # terminal set parameters
+        self._c_level = None
+        self._beta = None
+
         self._buildModelMatrices()
+        self._buildMPCProblem()
+
+    @property
+    def c_level(self):
+        return self._c_level
+
+    @c_level.setter
+    def c_level(self, value: float):
+        self._c_level = value
+        # rebuild mpc problem with new constraints
+        self._buildMPCProblem()
+
+    @property
+    def beta(self):
+        return self._beta
+
+    @beta.setter
+    def beta(self, value: float):
+        self._beta = value
+        # rebuild mpc problem with new constraints
         self._buildMPCProblem()
 
     def _buildModelMatrices(self):
@@ -177,8 +198,8 @@ class MPCControl:
         # fmt: on
 
         # time discretize system
-        self.A = self.t_s * self.A + np.identity(12)
-        self.B = self.t_s * self.B
+        self.A = self.dt * self.A + np.identity(12)
+        self.B = self.dt * self.B
 
         # state cost
         self.Q = np.diag([1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05])
@@ -191,22 +212,6 @@ class MPCControl:
         # L = closed loop eigenvalues L
         # K = state-feedback gain
         self.P, self.L, self.K = ct.dare(self.A, self.B, self.Q, self.R)
-
-        # Solve Lyapunov P:
-        # P,L,K = control.dare( self.A, self.B, self.Q, self.R, S=None, E=None)
-        # Ak =  self.A + self.B@K
-        # Qk =  self.Q + K.transpose()@ self.R@K
-        # Ak_inv = np.linalg.inv(Ak)
-        # Ak_T = np.transpose(Ak)
-        # C = -2 * np.matmul(Qk, Ak_inv)
-        # self.P_l = solve_sylvester(Ak_T, Ak_inv, C)
-
-    def _getPK(self):
-        P, L, K = control.dare(self.A, self.B, self.Q, self.R, S=None, E=None)
-        return P, K
-
-    def _get_ulb(self):
-        return self.W_inv, -np.matmul(self.W_inv, self.u_op)
 
     def _buildMPCProblem(self):
         cost = 0.0
@@ -232,18 +237,30 @@ class MPCControl:
             constraints += [x[:, k + 1] == self.A @ x[:, k] + self.B @ u[:, k]]
 
             # Constraints
-            constraints += [x[6:9, k] >= np.array([-math.pi, -math.pi / 2, -math.pi])]
-            constraints += [x[6:9, k] <= np.array([math.pi, math.pi / 2, math.pi])]
-            constraints += [self.W_inv @ u[:, k] >= -np.matmul(self.W_inv, self.u_op)]
+            constraints += [
+                x[6:9, k] >= np.array([-math.pi / 18, -math.pi / 18, -math.pi / 18])
+            ]
+            constraints += [
+                x[6:9, k] <= np.array([math.pi / 18, math.pi / 18, math.pi / 18])
+            ]
+            # constraints only on u0
+            constraints += [(self.W_inv @ u[:, k])[0] >= -(self.W_inv @ self.u_op)[0]]
 
         # terminal cost addition (estimate cost N->inf)
         Vf = cp.quad_form(x[:, self.N] - x_ref, self.P)
-        if self.use_terminal_cost:
+
+        if (self.use_terminal) == 1 and self.c_level:
+            # terminal cost
             cost += Vf
 
-        # terminal set constraint
-        if self.use_terminal_set:
-            constraints += [Vf <= self.c]
+            # terminal set constraint
+            # optimal stability hard constraint
+            # constraints += [x[:, self.N] == x_ref]
+            constraints += [Vf <= self.c_level]
+
+        if (self.use_terminal == 2) and self.beta:
+            # terminal cost weighting approximates terminal set
+            cost += self.beta * Vf
 
         # Inital condition
         constraints += [x[:, 0] == x_init]

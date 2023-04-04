@@ -10,16 +10,16 @@ from visualise import (
     plot_terminal_cost_lyupanov,
 )
 
+import terminal_set
 
-def simulate(
-    controller, x_init, x_target, dt=0.05, T=50, N=3, plot=False, use_terminal=False
-):
+
+def simulate(controller, x_init, x_target, T=50, plot=False, plots_suffix=""):
     # Initialise the output arrays
     x_real = np.zeros((12, T + 1))
-    x_all = np.zeros((12, N + 1, T + 1))
+    x_all = np.zeros((12, controller.N + 1, T + 1))
     u_real = np.zeros((4, T))
     x_real[:, 0] = x_init
-    timesteps = np.linspace(0, dt, T)
+    timesteps = np.linspace(0, controller.dt, T)
 
     # terminal cost and stage cost for housekeeping
     Vf = np.zeros(T)
@@ -39,38 +39,37 @@ def simulate(
         # Used input is the first input
         u_real[:, t] = u_out
 
-        x_e = x_real[:, t] - x_target
+        # x_e = x_real[:, t] - x_target
+
+        # Vf[t] = x_e.T @ controller.P @ x_e
+        # l[t] = x_e.T @ controller.Q @ x_e + u_real[:, t].T @ controller.R @ u_real[:, t]
+
+        # x[N] - x_target
+        x_e = x_all_out[:, -1] - x_target
 
         Vf[t] = x_e.T @ controller.P @ x_e
-        l[t] = x_e.T @ controller.Q @ x_e + u_real[:, t].T @ controller.R @ u_real[:, t]
+        l[t] = (
+            x_e.T @ (controller.Q + controller.K.T @ controller.R @ controller.K) @ x_e
+        )
 
     # Function that plots the trajectories.
     # The plot is stored with the name of the first parameter
     if plot:
         plot_state_history(
-            "figures/mpc_state_history"
-            + ("_terminal" if use_terminal else "")
-            + ".png",
+            "figures/mpc_state_history" + plots_suffix + ".png",
             x_real,
             T,
         )
         plot_action_history(
-            "figures/mpc_action_history"
-            + ("_terminal" if use_terminal else "")
-            + ".png",
+            "figures/mpc_action_history" + plots_suffix + ".png",
             u_real,
             T,
         )
         plot_3d_control(np.vstack((x_init, x_target)), x_real.T)
-        plot_terminal_cost_lyupanov(Vf, l, T, controller.c)
+        plot_terminal_cost_lyupanov(Vf, l, T, controller.c_level)
         plt.show()
 
-    return (
-        x_real,
-        u_real,
-        x_all,
-        timesteps,
-    )
+    return (x_real, u_real, x_all, timesteps, Vf, l)
 
 
 if __name__ == "__main__":
@@ -89,30 +88,21 @@ if __name__ == "__main__":
     ctrl = MPCControl(
         mpc_horizon=N,
         timestep_mpc_stages=dt,
-        terminal_set_level_c=100,
-        use_terminal_set=True,
-        use_terminal_cost=True,
+        use_terminal=0,
     )
 
-    print("K is ", ctrl.K)
-    print("L is ", ctrl.L)
-
-    print("Terminal cost ", ctrl.use_terminal_cost)
-    print("Terminal set ", ctrl.use_terminal_set)
+    # this also rebuilds mpc problem to include the new constraint
+    ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
 
     states, inputs, plans, timesteps = simulate(
         controller=ctrl,
         x_init=x_init,
         x_target=x_target,
-        dt=dt,
         T=T,
-        N=N,
         plot=True,
-        use_terminal=ctrl.use_terminal_cost,
+        plots_suffix="_terminal",
     )
 
-# Plots for stagecost and terminal cost over simulation time,
-# #essentially checking if it's a lyuapunov function
 
 # Plot for different mpc predictions horizons (with TCost and Tset)
 ## - plot stability (what they have in the example report)
@@ -123,17 +113,15 @@ if __name__ == "__main__":
 ## - U is not upper bounded
 
 # Andrei
-# We could also do the box optimisation thing?
-# We could also do the terminal set with penalise thing?
+# We could also do the terminal set with penalise thing? - Done
 # Generate some statistics about these 3 methods, are they faster compared to one another?
+
 
 # set upper boundary input constraint for rpm speeds for each motor
 
 # tracking error statistics, how close you follow the target
 
 # Initial condition in xf, vs init condition outside of xf
-
-# Verify the stability of the nonlinear system numerically
 
 
 # Questions to ask prof:
