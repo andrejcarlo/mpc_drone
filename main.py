@@ -13,7 +13,15 @@ from visualise import (
 import terminal_set
 
 
-def simulate(controller, x_init, x_target, T=50, plot=False, plots_suffix=""):
+def simulate(
+    controller,
+    x_init,
+    x_target,
+    T=50,
+    compute_Vf_weird=False,
+    plot=False,
+    plots_suffix="",
+):
     # Some checks
     # if (controller.use_terminal == 2) and not controller.beta:
     #     print("Using default mpc config perhaps you forgot to set beta!")
@@ -50,17 +58,25 @@ def simulate(controller, x_init, x_target, T=50, plot=False, plots_suffix=""):
         # x[N] - x_target
         x_e = x_all_out[:, -1] - x_target
 
-        # Ak = controller.A + controller.B @ controller.K
-        # Vf[t] = (Ak @ x_e).T @ controller.P @ (Ak @ x_e)
-        # l2[t] = (
-        #     x_e.T
-        #     @ (controller.Q + controller.K.T @ controller.R @ controller.K)
-        #     @ x_e
-        # )
-        Vf[t] = x_e.T @ controller.P @ x_e
-        stage_cost[t] = (
-            x_e.T @ controller.Q @ x_e + u_real[:, t].T @ controller.R @ u_real[:, t]
-        )
+        if compute_Vf_weird:
+            Ak = controller.A + controller.B @ controller.K
+            Vf[t] = (Ak @ x_e).T @ controller.P @ (Ak @ x_e)
+            stage_cost[t] = (
+                x_e.T
+                @ (controller.Q + controller.K.T @ controller.R @ controller.K)
+                @ x_e
+            )
+        else:
+            Vf[t] = x_e.T @ controller.P @ x_e
+            # stage_cost[t] = (
+            #     x_e.T @ controller.Q @ x_e
+            #     + u_real[:, t].T @ controller.R @ u_real[:, t]
+            # )
+            stage_cost[t] = (
+                x_e.T
+                @ (controller.Q + controller.K.T @ controller.R @ controller.K)
+                @ x_e
+            )
 
     # Function that plots the trajectories.
     # The plot is stored with the name of the first parameter

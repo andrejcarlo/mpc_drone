@@ -104,7 +104,7 @@ class MPCControl:
 
         # Bounds on inputs
         # According to C. Kanellakis, S. S. Mansouri and G. Nikolakopoulos, "Dynamic visual sensing based on MPC controlled UAVs," 2017 25th Mediterranean Conference on Control and Automation (MED), Valletta, Malta, 2017, pp. 1201-1206, doi: 10.1109/MED.2017.7984281.
-        self.umin = np.array([0.0, -11.2680, -11.2680, -0.54])
+        self.umin = np.array([-45.0720, -11.2680, -11.2680, -0.54])
         self.umax = np.array([45.0720, 11.2680, 11.2680, 0.54])
 
         # bounds on states
@@ -278,6 +278,7 @@ class MPCControl:
 
             constraints += [self.xmin <= x[:, k], x[:, k] <= self.xmax]
             constraints += [self.umin <= u[:, k], u[:, k] <= self.umax]
+
         # terminal cost addition (estimate cost N->inf)
         Vf = cp.quad_form(x[:, self.N] - x_ref, self.P)
 
@@ -289,10 +290,6 @@ class MPCControl:
             # optimal stability hard constraint
             # constraints += [x[:, self.N] == x_ref]
             constraints += [Vf <= self.c_level]
-
-        if self.beta:
-            # terminal cost weighting approximates terminal set
-            cost += self.beta * Vf
 
         # Inital condition
         constraints += [x[:, 0] == x_init]
