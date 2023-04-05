@@ -67,7 +67,9 @@ def simulate(
                 @ x_e
             )
         else:
-            Vf[t] = x_e.T @ controller.P @ x_e
+            Vf[t] = (controller.beta if controller.beta else 1.0) * (
+                x_e.T @ controller.P @ x_e
+            )
             # stage_cost[t] = (
             #     x_e.T @ controller.Q @ x_e
             #     + u_real[:, t].T @ controller.R @ u_real[:, t]

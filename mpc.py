@@ -242,8 +242,8 @@ class MPCControl:
         self.B = self.dt * self.B
 
         # state cost
-        self.Q = np.diag([1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05])
-        # self.Q = 1 * np.identity(12)
+        # self.Q = np.diag([1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05])
+        self.Q = 0.1 * np.identity(12)
         # input cost
         self.R = 0.01 * np.identity(4)
 
