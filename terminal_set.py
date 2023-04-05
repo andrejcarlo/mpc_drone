@@ -50,22 +50,14 @@ def _check_state_c(
     state_within_range = True
     for vertex in vertices:
         # state constraints
-        # phi, thetha, psi
-        if use_state_constraints and (
-            vertex[6] < -1 / 18 * np.pi
-            or vertex[6] > 1 / 18 * np.pi 
-            or vertex[7] < -1 / 18 * np.pi
-            or vertex[7] > 1 / 18 * np.pi
-            or vertex[8] < -1 / 18 * np.pi
-            or vertex[8] > 1 / 18 * np.pi
-        ):
+        if np.any(ctrl.xmin > vertex) or np.any(ctrl.xmax < vertex):
             state_within_range = False  # set the boolean variable to False if a vector is outside the range
             break
 
-        # print("Input constraint at vertex LHS ", ctrl.W_inv @ (K @ vertex))
-        # print("Input constraint at vertex RHS ", ulb)
-        # input constraints on u0
-        if (ctrl.W_inv @ (ctrl.K @ vertex))[0] < -(ctrl.W_inv @ ctrl.u_op)[0]:
+        # input constraints
+        if np.any(ctrl.umin > (ctrl.K @ vertex)) or np.any(
+            ctrl.umax < (ctrl.K @ vertex)
+        ):
             state_within_range = False  # set the boolean variable to False if a vector is outside the range
             break
         # print("Satisfied")

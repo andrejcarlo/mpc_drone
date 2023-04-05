@@ -34,7 +34,7 @@ class MPCControl:
 
         # terminal set parameters
         self._c_level = None
-        self._beta = None
+        self._beta = 0.0
 
         self._buildModelMatrices()
         self._buildMPCProblem()
@@ -46,7 +46,7 @@ class MPCControl:
     @c_level.setter
     def c_level(self, value: float):
         self._c_level = value
-        self._beta = None
+        self._beta = 1.0
         # rebuild mpc problem with new constraints
         self._buildMPCProblem()
 
@@ -57,7 +57,6 @@ class MPCControl:
     @beta.setter
     def beta(self, value: float):
         self._beta = value
-        self._c_level = None
         # rebuild mpc problem with new constraints
         self._buildMPCProblem()
 
@@ -102,6 +101,45 @@ class MPCControl:
         # u = [u1, u2, u3, u4]
         x = self.x_op
         u = self.u_op
+
+        # Bounds on inputs
+        # According to C. Kanellakis, S. S. Mansouri and G. Nikolakopoulos, "Dynamic visual sensing based on MPC controlled UAVs," 2017 25th Mediterranean Conference on Control and Automation (MED), Valletta, Malta, 2017, pp. 1201-1206, doi: 10.1109/MED.2017.7984281.
+        self.umin = np.array([0.0, -11.2680, -11.2680, -0.54])
+        self.umax = np.array([45.0720, 11.2680, 11.2680, 0.54])
+
+        # bounds on states
+        self.xmin = np.array(
+            [
+                -np.inf,
+                -np.inf,
+                -np.inf,
+                -np.inf,
+                -np.inf,
+                -np.inf,
+                -math.pi / 9,
+                -math.pi / 9,
+                -np.inf,
+                -np.inf,
+                -np.inf,
+                -np.inf,
+            ]
+        )
+        self.xmax = np.array(
+            [
+                +np.inf,
+                +np.inf,
+                +np.inf,
+                +np.inf,
+                +np.inf,
+                +np.inf,
+                +math.pi / 9,
+                +math.pi / 9,
+                +np.inf,
+                +np.inf,
+                +np.inf,
+                +np.inf,
+            ]
+        )
 
         # fmt: off
 
@@ -199,13 +237,13 @@ class MPCControl:
 
         # fmt: on
 
-        # time discretize system
+        # # time discretize system
         self.A = self.dt * self.A + np.identity(12)
         self.B = self.dt * self.B
 
         # state cost
         self.Q = np.diag([1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05])
-        # self.Q = 0.1 * np.identity(12)
+        # self.Q = 1 * np.identity(12)
         # input cost
         self.R = 0.01 * np.identity(4)
 
@@ -238,23 +276,15 @@ class MPCControl:
             # System dynamics
             constraints += [x[:, k + 1] == self.A @ x[:, k] + self.B @ u[:, k]]
 
-            # Constraints
-            constraints += [
-                x[6:9, k] >= np.array([-math.pi / 18, -math.pi / 18, -math.pi / 18])
-            ]
-            constraints += [
-                x[6:9, k] <= np.array([math.pi / 18, math.pi / 18, math.pi / 18])
-            ]
-            # constraints only on u0
-            constraints += [(self.W_inv @ u[:, k])[0] >= -(self.W_inv @ self.u_op)[0]]
-
+            constraints += [self.xmin <= x[:, k], x[:, k] <= self.xmax]
+            constraints += [self.umin <= u[:, k], u[:, k] <= self.umax]
         # terminal cost addition (estimate cost N->inf)
         Vf = cp.quad_form(x[:, self.N] - x_ref, self.P)
 
-        if self.c_level:
-            # terminal cost
-            cost += Vf
+        # 0 if self.beta or self.c_level is not set
+        cost += self.beta * Vf
 
+        if self.c_level:
             # terminal set constraint
             # optimal stability hard constraint
             # constraints += [x[:, self.N] == x_ref]

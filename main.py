@@ -29,7 +29,7 @@ def simulate(controller, x_init, x_target, T=50, plot=False, plots_suffix=""):
 
     # terminal cost and stage cost for housekeeping
     Vf = np.zeros(T)
-    l = np.zeros(T)
+    stage_cost = np.zeros(T)
 
     # while target_index != trajectory.number_of_points - 1 or trans_error > 0.05:
     for t in tqdm(range(0, T), "Simulating"):
@@ -45,17 +45,21 @@ def simulate(controller, x_init, x_target, T=50, plot=False, plots_suffix=""):
         # Used input is the first input
         u_real[:, t] = u_out
 
-        # x_e = x_real[:, t] - x_target
-
-        # Vf[t] = x_e.T @ controller.P @ x_e
-        # l[t] = x_e.T @ controller.Q @ x_e + u_real[:, t].T @ controller.R @ u_real[:, t]
+        # -> log terminal cost for stability analysis
 
         # x[N] - x_target
         x_e = x_all_out[:, -1] - x_target
 
+        # Ak = controller.A + controller.B @ controller.K
+        # Vf[t] = (Ak @ x_e).T @ controller.P @ (Ak @ x_e)
+        # l2[t] = (
+        #     x_e.T
+        #     @ (controller.Q + controller.K.T @ controller.R @ controller.K)
+        #     @ x_e
+        # )
         Vf[t] = x_e.T @ controller.P @ x_e
-        l[t] = (
-            x_e.T @ (controller.Q + controller.K.T @ controller.R @ controller.K) @ x_e
+        stage_cost[t] = (
+            x_e.T @ controller.Q @ x_e + u_real[:, t].T @ controller.R @ u_real[:, t]
         )
 
     # Function that plots the trajectories.
@@ -72,10 +76,10 @@ def simulate(controller, x_init, x_target, T=50, plot=False, plots_suffix=""):
             T,
         )
         plot_3d_control(np.vstack((x_init, x_target)), x_real.T)
-        plot_terminal_cost_lyupanov(Vf, l, T, controller.c_level)
+        plot_terminal_cost_lyupanov(Vf, stage_cost, T, None)
         plt.show()
 
-    return (x_real, u_real, x_all, timesteps, Vf, l)
+    return (x_real, u_real, x_all, timesteps, Vf, stage_cost)
 
 
 if __name__ == "__main__":
