@@ -10,12 +10,9 @@ import control
 from scipy.linalg import solve_sylvester
 
 
-class MPCControl:
+class Controller:
     def __init__(
-        self,
-        mpc_horizon=3,
-        timestep_mpc_stages=0.25,
-        use_terminal=0,
+        self, mpc_horizon=3, timestep_mpc_stages=0.25, use_terminal=0, control_type="mpc"
     ):
         """Common control classes __init__ method.
 
@@ -36,8 +33,12 @@ class MPCControl:
         self._c_level = None
         self._beta = 0.0
 
+        # type of controller
+        self.control_type = control_type
+
         self._buildModelMatrices()
-        self._buildMPCProblem()
+        if self.control_type == "mpc":
+            self._buildMPCProblem()
 
     @property
     def c_level(self):
@@ -46,7 +47,7 @@ class MPCControl:
     @c_level.setter
     def c_level(self, value: float):
         self._c_level = value
-        self._beta = 1.0
+        # self._beta = 1.0
         # rebuild mpc problem with new constraints
         self._buildMPCProblem()
 
@@ -252,6 +253,7 @@ class MPCControl:
         # L = closed loop eigenvalues L
         # K = state-feedback gain
         self.P, self.L, self.K = ct.dare(self.A, self.B, self.Q, self.R)
+        self.K = -self.K
 
     def _buildMPCProblem(self):
         cost = 0.0

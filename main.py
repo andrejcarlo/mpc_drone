@@ -1,6 +1,6 @@
 import numpy as np
 from tqdm import tqdm
-from mpc import MPCControl
+from mpc import Controller
 import matplotlib.pyplot as plt
 
 from visualise import (
@@ -18,16 +18,9 @@ def simulate(
     x_init,
     x_target,
     T=50,
-    compute_Vf_weird=False,
     plot=False,
     plots_suffix="",
 ):
-    # Some checks
-    # if (controller.use_terminal == 2) and not controller.beta:
-    #     print("Using default mpc config perhaps you forgot to set beta!")
-    # if (controller.use_terminal == 1) and not controller.c_level:
-    #     print("Using default mpc config perhaps you forgot to set c_level!")
-
     # Initialise the output arrays
     x_real = np.zeros((12, T + 1))
     x_all = np.zeros((12, controller.N + 1, T + 1))
@@ -41,39 +34,32 @@ def simulate(
 
     # while target_index != trajectory.number_of_points - 1 or trans_error > 0.05:
     for t in tqdm(range(0, T), "Simulating"):
-        # action @ k, next state at k+1, plan at k+N
-        (u_out, x_out, x_all_out) = controller.computeControl(
-            x_init=x_real[:, t], x_target=x_target
-        )
+        if controller.control_type == "lqr":
+            # only apply lqr control law
+            u_out = controller.K @ x_real[:, t]
+            u_real[:, t] = u_out
+            x_real[:, t + 1] = controller.A @ x_real[:, t] + controller.B @ u_real[:, t]
 
-        # Next x is the x in the second state
-        x_real[:, t + 1] = x_out
-        x_all[:, :, t] = x_all_out  # Save the plan (for visualization)
-
-        # Used input is the first input
-        u_real[:, t] = u_out
-
-        # -> log terminal cost for stability analysis
-
-        # x[N] - x_target
-        x_e = x_all_out[:, -1] - x_target
-
-        if compute_Vf_weird:
-            Ak = controller.A + controller.B @ controller.K
-            Vf[t] = (Ak @ x_e).T @ controller.P @ (Ak @ x_e)
-            stage_cost[t] = (
-                x_e.T
-                @ (controller.Q + controller.K.T @ controller.R @ controller.K)
-                @ x_e
+        elif controller.control_type == "mpc":
+            # action @ k, next state at k+1, plan at k+N
+            (u_out, x_out, x_all_out) = controller.computeControl(
+                x_init=x_real[:, t], x_target=x_target
             )
-        else:
+
+            # Next x is the x in the second state
+            x_real[:, t + 1] = x_out
+            x_all[:, :, t] = x_all_out  # Save the plan (for visualization)
+
+            # Used input is the first input
+            u_real[:, t] = u_out
+
+            # x[N] - x_target
+            x_e = x_all_out[:, -1] - x_target
+
+            # log tcost and stagecost for plotting
             Vf[t] = (controller.beta if controller.beta else 1.0) * (
                 x_e.T @ controller.P @ x_e
             )
-            # stage_cost[t] = (
-            #     x_e.T @ controller.Q @ x_e
-            #     + u_real[:, t].T @ controller.R @ u_real[:, t]
-            # )
             stage_cost[t] = (
                 x_e.T
                 @ (controller.Q + controller.K.T @ controller.R @ controller.K)
@@ -84,12 +70,20 @@ def simulate(
     # The plot is stored with the name of the first parameter
     if plot:
         plot_state_history(
-            "figures/mpc_state_history" + plots_suffix + ".png",
+            "figures/"
+            + controller.control_type
+            + "_state_history"
+            + plots_suffix
+            + ".png",
             x_real,
             T,
         )
         plot_action_history(
-            "figures/mpc_action_history" + plots_suffix + ".png",
+            "figures/"
+            + controller.control_type
+            + "_action_history"
+            + plots_suffix
+            + ".png",
             u_real,
             T,
         )
@@ -113,10 +107,9 @@ if __name__ == "__main__":
     print("Target state to reach is ", x_target)
 
     # Controller
-    ctrl = MPCControl(
+    ctrl = Controller(
         mpc_horizon=N,
         timestep_mpc_stages=dt,
-        use_terminal=0,
     )
 
     # this also rebuilds mpc problem to include the new constraint
@@ -135,10 +128,6 @@ if __name__ == "__main__":
 # Plot for different mpc predictions horizons (with TCost and Tset)
 ## - plot stability (what they have in the example report)
 ## - plot computational time versus choice of N
-
-# Investigate effect of c, motivate choice of c
-# Discuss why it cannot find a solution with a lower N and a huge c
-## - U is not upper bounded
 
 # Andrei
 # We could also do the terminal set with penalise thing? - Done
