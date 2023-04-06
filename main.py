@@ -2,6 +2,8 @@ import numpy as np
 from tqdm import tqdm
 from mpc import Controller
 import matplotlib.pyplot as plt
+import time
+
 
 from visualise import (
     plot_3d_control,
@@ -32,6 +34,7 @@ def simulate(
     Vf = np.zeros(T)
     stage_cost = np.zeros(T)
 
+    start = time.time()
     # while target_index != trajectory.number_of_points - 1 or trans_error > 0.05:
     for t in tqdm(range(0, T), "Simulating"):
         if controller.control_type == "lqr":
@@ -65,6 +68,9 @@ def simulate(
                 @ (controller.Q + controller.K.T @ controller.R @ controller.K)
                 @ x_e
             )
+    end = time.time()
+    time_cost = end - start
+    print("For horizon {}, it costs {}s to finish calculation.".format(controller.N,end-start))
 
     # Function that plots the trajectories.
     # The plot is stored with the name of the first parameter
@@ -91,7 +97,7 @@ def simulate(
         plot_terminal_cost_lyupanov(Vf, stage_cost, T, None)
         plt.show()
 
-    return (x_real, u_real, x_all, timesteps, Vf, stage_cost)
+    return (x_real, u_real, x_all, timesteps, Vf, stage_cost, time_cost)
 
 
 if __name__ == "__main__":
