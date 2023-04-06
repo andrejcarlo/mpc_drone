@@ -50,22 +50,14 @@ def _check_state_c(
     state_within_range = True
     for vertex in vertices:
         # state constraints
-        # phi, thetha, psi
-        if use_state_constraints and (
-            vertex[6] < -np.pi
-            or vertex[6] > np.pi
-            or vertex[7] < -1 / 2 * np.pi
-            or vertex[7] > 1 / 2 * np.pi
-            or vertex[8] < -np.pi
-            or vertex[8] > np.pi
-        ):
+        if np.any(ctrl.xmin > vertex) or np.any(ctrl.xmax < vertex):
             state_within_range = False  # set the boolean variable to False if a vector is outside the range
             break
 
-        # print("Input constraint at vertex LHS ", ctrl.W_inv @ (K @ vertex))
-        # print("Input constraint at vertex RHS ", ulb)
-        # input constraints rpm
-        if np.all((ctrl.W_inv @ (ctrl.K @ vertex)) < -(ctrl.W_inv @ ctrl.u_op)):
+        # input constraints
+        if np.any(ctrl.umin > (ctrl.K @ vertex)) or np.any(
+            ctrl.umax < (ctrl.K @ vertex)
+        ):
             state_within_range = False  # set the boolean variable to False if a vector is outside the range
             break
         # print("Satisfied")
@@ -78,7 +70,7 @@ def calculate_c(ctrl, x_target, c_init=2000, use_state_constraints=False):
     state_within_range = _check_state_c(ctrl, vertices, use_state_constraints)
 
     # continue to decrease c while checking if we satisfy the constraints
-    while (not state_within_range) and (c > 1e-3):
+    while (not state_within_range) and (c > 1e-5):
         c = c / 1.01
         vertices = calculate_vertices_bbox(c, ctrl.P, x_target)
         state_within_range = _check_state_c(ctrl, vertices, use_state_constraints)
