@@ -36,6 +36,7 @@ class Controller:
         # terminal set parameters
         self._c_level = None
         self._beta = 0.0
+        self.d = np.zeros(12)
 
         # type of controller
         self.control_type = control_type
@@ -43,6 +44,7 @@ class Controller:
         self._buildModelMatrices()
         if self.control_type == "mpc":
             self._buildMPCProblem()
+            self._buildOTSProblem()
 
     @property
     def c_level(self):
@@ -245,6 +247,11 @@ class Controller:
         # # time discretize system
         self.A = self.dt * self.A + np.identity(12)
         self.B = self.dt * self.B
+        self.C = np.identity(12)
+        self.Cd = np.identity(12)
+
+        # observer gain
+        self.L = 0.1 * np.identity(12)
 
         # state cost
         # self.Q = np.diag([1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05])
@@ -256,7 +263,7 @@ class Controller:
         # P = dare solution
         # L = closed loop eigenvalues L
         # K = state-feedback gain
-        self.P, self.L, self.K = ct.dare(self.A, self.B, self.Q, self.R)
+        self.P, _, self.K = ct.dare(self.A, self.B, self.Q, self.R)
         self.K = -self.K
 
     def _buildMPCProblem(self):
@@ -265,6 +272,7 @@ class Controller:
 
         # Parameters
         x_ref = cp.Parameter((12), name="x_ref")
+        u_ref = cp.Parameter((4), name="u_ref")
         x_init = cp.Parameter((12), name="x_init")
 
         # Create the optimization variables
@@ -277,7 +285,7 @@ class Controller:
 
             # Cost
             cost += cp.quad_form(x_e, self.Q)
-            cost += cp.quad_form(u[:, k], self.R)
+            cost += cp.quad_form(u[:, k] - u_ref, self.R)
 
             # System dynamics
             constraints += [x[:, k + 1] == self.A @ x[:, k] + self.B @ u[:, k]]
@@ -300,7 +308,36 @@ class Controller:
         # Inital condition
         constraints += [x[:, 0] == x_init]
 
-        self.problem = cp.Problem(cp.Minimize(cost), constraints)
+        self.problem_mpc = cp.Problem(cp.Minimize(cost), constraints)
+
+    def _buildOTSProblem(self):
+        cost = 0.0
+        constraints = []
+
+        # TODO: Change hardcoded dimensions to x and u shapes
+        # Parameters
+        y_ref = cp.Parameter((12), name="y_ref")
+        d_hat = cp.Parameter((12), name="d_hat")
+
+        # Create the optimization variable (contains x_r and u_r)
+        xu_r = cp.Variable((16), name="xu_r")
+
+        H = np.identity(16)
+        h = np.zeros((16, 1))
+
+        cost += (1 / 2) * cp.quad_form(xu_r, H) + h.T @ xu_r
+
+        mat1 = np.concatenate((np.identity(12) - self.A, -self.B), axis=1)
+        mat2 = np.concatenate((self.C, np.zeros((12, 4))), axis=1)
+        A_cstr = np.concatenate((mat1, mat2), axis=0)
+        b_cstr = cp.hstack((np.zeros(12), (y_ref - self.Cd @ d_hat)))
+
+        constraints += [A_cstr @ xu_r == b_cstr]
+        # state and input constraints
+        constraints += [self.xmin <= xu_r[:12], xu_r[:12] <= self.xmax]
+        constraints += [self.umin <= xu_r[12:], xu_r[12:] <= self.umax]
+
+        self.problem_ots = cp.Problem(cp.Minimize(cost), constraints)
 
     def _computeRPMfromInputs(self, u_delta):
         """
@@ -308,22 +345,42 @@ class Controller:
         """
         return np.sqrt(np.matmul(self.W_inv, self.u_op + u_delta))
 
-    def computeControl(self, x_init, x_target):
-        self.problem.param_dict["x_init"].value = x_init
-        self.problem.param_dict["x_ref"].value = x_target
+    def computeOTS(self, y_ref, d_hat):
+        ## Run OTS here
+        self.problem_ots.param_dict["y_ref"].value = y_ref
+        self.problem_ots.param_dict["d_hat"].value = d_hat
 
-        self.problem.solve(solver=cp.GUROBI, verbose=False)
+        self.problem_ots.solve(reoptimize=True, solver=cp.GUROBI, verbose=False)
         if not (
-            self.problem.status == "optimal"
-            or self.problem.status == "inaccurate optimal"
+            self.problem_ots.status == "optimal"
+            or self.problem_ots.status == "inaccurate optimal"
         ):
             raise RuntimeError(
-                f"MPC solver did not find a solution, due to it being {self.problem.status}"
+                f"MPC solver did not find a solution, due to it being {self.problem_mpc.status}"
+            )
+
+        return (
+            self.problem_ots.var_dict["xu_r"].value[:12],
+            self.problem_ots.var_dict["xu_r"].value[12:],
+        )
+
+    def computeControl(self, x_init, x_target, u_target):
+        self.problem_mpc.param_dict["x_init"].value = x_init
+        self.problem_mpc.param_dict["x_ref"].value = x_target
+        self.problem_mpc.param_dict["u_ref"].value = u_target
+
+        self.problem_mpc.solve(solver=cp.GUROBI, verbose=False)
+        if not (
+            self.problem_mpc.status == "optimal"
+            or self.problem_mpc.status == "inaccurate optimal"
+        ):
+            raise RuntimeError(
+                f"MPC solver did not find a solution, due to it being {self.problem_mpc.status}"
             )
 
         # We return the MPC input and the next state (and also the plan for visualization)
         return (
-            self.problem.var_dict["u"][:, 0].value,
-            self.problem.var_dict["x"][:, 1].value,
-            self.problem.var_dict["x"][:, :].value,
+            self.problem_mpc.var_dict["u"][:, 0].value,
+            self.problem_mpc.var_dict["x"][:, 1].value,
+            self.problem_mpc.var_dict["x"][:, :].value,
         )
