@@ -2,14 +2,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def plot_3d_control(reference, actual):
+def plot_3d_control(x_init, y_target, actual):
     fig = plt.figure()
     ax = fig.add_subplot(projection="3d")
 
     ax.plot(
-        reference[:, 0],
-        reference[:, 1],
-        reference[:, 2],
+        [x_init[0], y_target[0]],
+        [x_init[1], y_target[1]],
+        [x_init[2], y_target[2]],
         label="reference",
         color="b",
         linestyle="--",
@@ -28,15 +28,12 @@ def plot_3d_control(reference, actual):
     # ax.margins(0.01)
     ax.autoscale(False)
     ax.set_box_aspect((1, 1, 1))
-    ax.set_xlim(actual[0, 0], reference[-1, 0])
-    ax.set_ylim(actual[0, 1], reference[-1, 1])
-    ax.set_zlim(actual[0, 2], reference[-1, 2])
-    # ax.get_xaxis().set_ticklabels([])
-    # ax.get_yaxis().set_ticklabels([])
-    # ax.get_zaxis().set_ticklabels([])
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
+    ax.set_xlim(x_init[0], y_target[0])
+    ax.set_ylim(x_init[1], y_target[1])
+    ax.set_zlim(x_init[2], y_target[2])
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("y [m]")
+    ax.set_zlabel("z [m]")
     ax.legend()
     fig.tight_layout()
 
@@ -44,7 +41,7 @@ def plot_3d_control(reference, actual):
 def plot_single_state(state, T, label):
     plt.plot(state)
     plt.yticks([np.min(state), 0, np.max(state)])
-    plt.ylim([np.min(state) - 0.1, np.max(state) + 0.1])
+    plt.ylim([np.min(state) - 0.01, np.max(state) + 0.01])
     plt.xlim([0, T])
     plt.ylabel(label, fontsize=14)
     plt.grid()
@@ -128,6 +125,7 @@ def plot_terminal_cost_lyupanov(Vf, l, T, c_level):
     l_diff = l[0:-1]
 
     f3 = plt.figure(figsize=(12, 8))
+    plt.title("Stability - Lyapunov decrease assumption")
 
     plt.plot(range(0, T - 1), Vf_diff, color="r", label=r"$V_f(f(x,u)) - V_f(x)$")
     plt.plot(range(0, T - 1), -l_diff, color="g", label=r"$-l(x,u)$")
@@ -137,3 +135,32 @@ def plot_terminal_cost_lyupanov(Vf, l, T, c_level):
         plt.axhline(y=c_level, color="c", label=r"$c$ level set curve")
     plt.legend()
     plt.grid()
+
+
+def plot_disturbance(d_const, d_hat, T):
+    # norm error in disturbance
+    f3 = plt.figure(figsize=(12, 8))
+    plt.title("Disturbance estimation")
+
+    # ax1 = f3.add_subplot(3, 1, 1)
+    # plt.plot(d_hat[0, :], label="estimate")
+    # plt.axhline(d_const[0], color="r", label="actual")
+    # plt.ylabel(r"$d_x$ $(-)$", fontsize=14)
+
+    # ax1 = f3.add_subplot(3, 1, 2)
+    # plt.plot(d_hat[1, :], label="estimate")
+    # plt.axhline(d_const[1], color="r", label="actual")
+    # plt.ylabel(r"$d_y$ $(-)$", fontsize=14)
+
+    # ax1 = f3.add_subplot(3, 1, 3)
+    # plt.plot(d_hat[2, :], label="estimate")
+    # plt.axhline(d_const[2], color="r", label="actual")
+    # plt.ylabel(r"$d_z$ $(-)$", fontsize=14)
+
+    d_diff = np.linalg.norm(d_hat.T - d_const, axis=1)
+    plt.ylabel(r"$|| \hat{d} - d ||$", fontsize=14)
+    plt.plot(d_diff)
+
+    plt.legend()
+    plt.grid()
+    plt.tight_layout()
