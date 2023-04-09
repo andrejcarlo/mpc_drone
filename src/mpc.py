@@ -26,16 +26,20 @@ class Controller:
         solver=cp.GUROBI,
         control_type="mpc",
     ):
-        """Common control classes __init__ method.
+        """Controller class that sets up a model drone, and solves the OTS and MPC problems.
 
         Parameters
         ----------
-        drone_model : DroneModel
-            The type of drone to control (detailed in an .urdf file in folder `assets`).
-        g : float, optional
-            The gravitational acceleration in m/s^2.
-        N : optimization horizon
-
+        dim : Dimension
+            Dimensions of each of the systems variables
+        mpc_horizon : int
+            Optimisation horizon to be used in MPC caculation
+        timestep_mpc_stages : float
+            Discretisation timestep
+        solver : cvxpy object
+            Solver to be used in computation of OTS and MPC problem. GUROBI by default
+        control_type : str
+            Type of control to be used can be either 'lqr' or 'mpc'
         """
         self.dt = timestep_mpc_stages  # time step per stage
         self.N = mpc_horizon

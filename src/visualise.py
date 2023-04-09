@@ -142,21 +142,6 @@ def plot_disturbance(d_const, d_hat, T):
     f3 = plt.figure(figsize=(12, 8))
     plt.title("Disturbance estimation")
 
-    # ax1 = f3.add_subplot(3, 1, 1)
-    # plt.plot(d_hat[0, :], label="estimate")
-    # plt.axhline(d_const[0], color="r", label="actual")
-    # plt.ylabel(r"$d_x$ $(-)$", fontsize=14)
-
-    # ax1 = f3.add_subplot(3, 1, 2)
-    # plt.plot(d_hat[1, :], label="estimate")
-    # plt.axhline(d_const[1], color="r", label="actual")
-    # plt.ylabel(r"$d_y$ $(-)$", fontsize=14)
-
-    # ax1 = f3.add_subplot(3, 1, 3)
-    # plt.plot(d_hat[2, :], label="estimate")
-    # plt.axhline(d_const[2], color="r", label="actual")
-    # plt.ylabel(r"$d_z$ $(-)$", fontsize=14)
-
     d_diff = np.linalg.norm(d_hat.T - d_const, axis=1)
     plt.ylabel(r"$|| \hat{d} - d ||$", fontsize=14)
     plt.plot(d_diff)
