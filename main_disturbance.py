@@ -3,7 +3,7 @@ from tqdm import tqdm
 import cvxpy as cp
 import matplotlib.pyplot as plt
 
-from mpc_with_ots import Controller
+from mpc_with_ots import Controller, Dimension
 import terminal_set
 from visualise import (
     plot_3d_control,
@@ -24,23 +24,22 @@ def simulate(
     plots_suffix="",
 ):
     # Initialise the states
-    x_real = np.zeros((12, T + 1))
-    x_all = np.zeros((12, controller.N + 1, T + 1))
-    u_real = np.zeros((4, T))
+    x_real = np.zeros((controller.dim.nx, T + 1))
+    x_all = np.zeros((controller.dim.nx, controller.N + 1, T + 1))
+    u_real = np.zeros((controller.dim.nu, T))
     x_real[:, 0] = x_init
 
     # initialise the outputs and disturbance estimate
-    y_real = np.zeros((3, T))
-    d_hat = np.zeros((3, T + 1))
-    measurement_noise = np.zeros(3)
+    y_real = np.zeros((controller.dim.ny, T))
+    d_hat = np.zeros((controller.dim.nd, T + 1))
+    measurement_noise = np.zeros(controller.dim.ny)
 
     # terminal cost and stage cost for housekeeping
     Vf = np.zeros(T)
     stage_cost = np.zeros(T)
 
     # compute OTS with no disturbance
-    if controller.control_type == "mpc":
-        (x_target, u_target) = controller.computeOTS(y_target, np.zeros(3))
+    (x_target, u_target) = controller.computeOTS(y_target, np.zeros(3))
 
     if use_terminal_set:
         ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
@@ -48,8 +47,8 @@ def simulate(
     for t in tqdm(range(0, T), "Simulating"):
         if controller.control_type == "lqr":
             # only apply lqr control law
-            u_out = controller.K @ x_real[:, t]
-            u_real[:, t] = u_out
+            u_out = controller.K @ (x_real[:, t] - x_target)
+            u_real[:, t] = u_out + u_target
             x_real[:, t + 1] = controller.A @ x_real[:, t] + controller.B @ u_real[:, t]
             y_real[:, t] = (
                 controller.C @ x_real[:, t + 1]
@@ -135,8 +134,10 @@ if __name__ == "__main__":
     dt = 0.10  # Sampling period
     N = 20  # MPC Horizon
     T = 100  # Duration of simulation
-    x_init = np.zeros(12)  # Initial conditions
-    y_target = np.zeros(3)  # State to reach
+    dim = Dimension(nx=12, nu=4, ny=3, nd=3)
+
+    x_init = np.zeros(dim.nx)  # Initial conditions
+    y_target = np.zeros(dim.ny)  # State to reach
     y_target[0:3] = np.array([1.0, 0.0, 0.0])
     # y_target[3:6] = np.array([0.0, 0.0, 0.0])
 
@@ -145,15 +146,16 @@ if __name__ == "__main__":
 
     # Controller
     ctrl = Controller(
+        dim=dim,
         mpc_horizon=N,
         timestep_mpc_stages=dt,
         solver=cp.GUROBI,
-        control_type="lqr",  # 'lqr' or 'mpc'
+        control_type="mpc",  # 'lqr' or 'mpc'
     )
 
     # Set disturbance and terminal cost scaling
-    # ctrl.d = np.array([0.0, 0.0, 0.0])
-    # ctrl.beta = 1.0  # << (very small) beta means you get a behaviour as if tcost was not there at all
+    ctrl.d = np.array([0.0, 0.5, 0.0])
+    ctrl.beta = 2.0  # << (very small) beta means you get a behaviour as if tcost was not there at all
 
     states, inputs, plans, Vf, l, outputs, disturbance_est = simulate(
         controller=ctrl,

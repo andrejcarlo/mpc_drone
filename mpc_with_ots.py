@@ -6,13 +6,22 @@ from scipy import linalg as la
 import control as ct
 
 from drone import drone_cf2x, drone_m_islam
-import control
-from scipy.linalg import solve_sylvester
+
+from dataclasses import dataclass
+
+
+@dataclass
+class Dimension:
+    nx: int
+    ny: int
+    nu: int
+    nd: int
 
 
 class Controller:
     def __init__(
         self,
+        dim,
         mpc_horizon=3,
         timestep_mpc_stages=0.25,
         solver=cp.GUROBI,
@@ -31,6 +40,7 @@ class Controller:
         """
         self.dt = timestep_mpc_stages  # time step per stage
         self.N = mpc_horizon
+        self.dim = dim
 
         # terminal set parameters
         self._c_level = None
@@ -43,8 +53,8 @@ class Controller:
         self.solver = solver
 
         self._buildModelMatrices()
+        self._buildOTSProblem()
         if self.control_type == "mpc":
-            self._buildOTSProblem()
             self._buildMPCProblem()
 
     @property
@@ -100,9 +110,9 @@ class Controller:
 
         # operating point for linearization
         self.x_op = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0])
-        self.hover_rpm = np.full(4, math.sqrt(m * g / (4 * k_f)))
+        self.hover_rpm = np.full(self.dim.nu, math.sqrt(m * g / (4 * k_f)))
         self.u_op = np.matmul(np.linalg.inv(self.W_inv), np.square(self.hover_rpm))
-        self.d = np.zeros(3)
+        self.d = np.zeros(self.dim.nd)
 
         #      0, 1, 2, 3,     4,     5,     6,   7,     8,   9, 10,11
         # x = [x, y, z, x_dot, y_dot, z_dot, phi, theta, psi, p, q, r]
@@ -233,23 +243,23 @@ class Controller:
         # fmt: on
 
         # Time discretize system
-        self.A = self.dt * self.A + np.identity(12)
+        self.A = self.dt * self.A + np.identity(self.dim.nx)
         self.B = self.dt * self.B
 
         # Output matrix
-        self.C = np.zeros((3, 12))
-        self.C[:3, :3] = np.identity(3)
+        self.C = np.zeros((self.dim.ny, self.dim.nx))
+        self.C[: self.dim.ny, : self.dim.ny] = np.identity(self.dim.ny)
 
         # Disturbance matrix
-        self.Cd = np.identity(3)
+        self.Cd = np.identity(self.dim.ny)
 
         # observer gain
-        self.L = 0.1 * np.identity(3)
+        self.L = 0.1 * np.identity(self.dim.ny)
 
         # state & input cost matrices
         # self.Q = np.diag([1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05])
-        self.Q = 0.1 * np.identity(12)
-        self.R = 0.01 * np.identity(4)
+        self.Q = 0.1 * np.identity(self.dim.nx)
+        self.R = 0.01 * np.identity(self.dim.nu)
 
         # Solve discrete algebraic ricatii eq
         # P = dare solution
@@ -262,13 +272,13 @@ class Controller:
         constraints = []
 
         # Parameters
-        x_ref = cp.Parameter((12), name="x_ref")
-        u_ref = cp.Parameter((4), name="u_ref")
-        x_init = cp.Parameter((12), name="x_init")
+        x_ref = cp.Parameter((self.dim.nx), name="x_ref")
+        u_ref = cp.Parameter((self.dim.nu), name="u_ref")
+        x_init = cp.Parameter((self.dim.nx), name="x_init")
 
         # Create the optimization variables
-        x = cp.Variable((12, self.N + 1), name="x")
-        u = cp.Variable((4, self.N), name="u")
+        x = cp.Variable((self.dim.nx, self.N + 1), name="x")
+        u = cp.Variable((self.dim.nu, self.N), name="u")
 
         # For each stage in k = 0, ..., N-1
         for k in range(self.N):
@@ -305,29 +315,34 @@ class Controller:
         cost = 0.0
         constraints = []
 
-        # TODO: Change hardcoded dimensions to x and u shapes
         # Parameters
-        y_ref = cp.Parameter((3), name="y_ref")
-        d_hat = cp.Parameter((3), name="d_hat")
+        y_ref = cp.Parameter((self.dim.ny), name="y_ref")
+        d_hat = cp.Parameter((self.dim.nd), name="d_hat")
 
         # Create the optimization variable (contains x_r and u_r)
-        xu_r = cp.Variable((16), name="xu_r")
+        xu_r = cp.Variable((self.dim.nx + self.dim.nu), name="xu_r")
 
         # cost matrices for the quadratic problem
-        H = np.identity(16)
-        h = np.zeros((16, 1))
-        
+        H = np.identity(self.dim.nx + self.dim.nu)
+        h = np.zeros((self.dim.nx + self.dim.nu, 1))
+
         cost += (1 / 2) * cp.quad_form(xu_r, H) + h.T @ xu_r
 
-        mat1 = np.concatenate((np.identity(12) - self.A, -self.B), axis=1)
-        mat2 = np.concatenate((self.C, np.zeros((3, 4))), axis=1)
+        mat1 = np.concatenate((np.identity(self.dim.nx) - self.A, -self.B), axis=1)
+        mat2 = np.concatenate((self.C, np.zeros((self.dim.ny, self.dim.nu))), axis=1)
         A_cstr = np.concatenate((mat1, mat2), axis=0)
-        b_cstr = cp.hstack((np.zeros(12), (y_ref - self.Cd @ d_hat)))
+        b_cstr = cp.hstack((np.zeros(self.dim.nx), (y_ref - self.Cd @ d_hat)))
 
         constraints += [A_cstr @ xu_r == b_cstr]
         # state and input constraints
-        constraints += [self.xmin <= xu_r[:12], xu_r[:12] <= self.xmax]
-        constraints += [self.umin <= xu_r[12:], xu_r[12:] <= self.umax]
+        constraints += [
+            self.xmin <= xu_r[: self.dim.nx],
+            xu_r[: self.dim.nx] <= self.xmax,
+        ]
+        constraints += [
+            self.umin <= xu_r[self.dim.nx :],
+            xu_r[self.dim.nx :] <= self.umax,
+        ]
 
         self.problem_ots = cp.Problem(cp.Minimize(cost), constraints)
 
@@ -352,8 +367,8 @@ class Controller:
             )
 
         return (
-            self.problem_ots.var_dict["xu_r"].value[:12],
-            self.problem_ots.var_dict["xu_r"].value[12:],
+            self.problem_ots.var_dict["xu_r"].value[: self.dim.nx],
+            self.problem_ots.var_dict["xu_r"].value[self.dim.nx :],
         )
 
     def computeControl(self, x_init, x_target, u_target):
