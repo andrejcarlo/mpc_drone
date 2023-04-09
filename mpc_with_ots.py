@@ -15,7 +15,7 @@ class Controller:
         self,
         mpc_horizon=3,
         timestep_mpc_stages=0.25,
-        use_terminal=0,
+        solver=cp.GUROBI,
         control_type="mpc",
     ):
         """Common control classes __init__ method.
@@ -31,20 +31,21 @@ class Controller:
         """
         self.dt = timestep_mpc_stages  # time step per stage
         self.N = mpc_horizon
-        self.use_terminal = use_terminal
 
         # terminal set parameters
         self._c_level = None
         self._beta = 0.0
-        self.d = np.zeros(12)
 
         # type of controller
         self.control_type = control_type
 
+        # type of solver CVXPY should use
+        self.solver = solver
+
         self._buildModelMatrices()
         if self.control_type == "mpc":
-            self._buildMPCProblem()
             self._buildOTSProblem()
+            self._buildMPCProblem()
 
     @property
     def c_level(self):
@@ -53,7 +54,6 @@ class Controller:
     @c_level.setter
     def c_level(self, value: float):
         self._c_level = value
-        # self._beta = 1.0
         # rebuild mpc problem with new constraints
         self._buildMPCProblem()
 
@@ -102,6 +102,7 @@ class Controller:
         self.x_op = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0])
         self.hover_rpm = np.full(4, math.sqrt(m * g / (4 * k_f)))
         self.u_op = np.matmul(np.linalg.inv(self.W_inv), np.square(self.hover_rpm))
+        self.d = np.zeros(3)
 
         #      0, 1, 2, 3,     4,     5,     6,   7,     8,   9, 10,11
         # x = [x, y, z, x_dot, y_dot, z_dot, phi, theta, psi, p, q, r]
@@ -149,7 +150,6 @@ class Controller:
         )
 
         # fmt: off
-
         dx_ddot_dphi = -u[0]/m * (cos(x[6])*sin(x[8]) - sin(x[6])*cos(x[8])* sin(x[7]))
         dx_ddot_dtheta = -u[0]/m * (sin(x[6])*sin(x[8]) + cos(x[6])*cos(x[8])* cos(x[7]))
         dx_ddot_dpsi = -u[0]/m * (sin(x[6])*cos(x[8]) - cos(x[6])*sin(x[8])* cos(x[7]))
@@ -201,6 +201,19 @@ class Controller:
                            [0, 0, 0, 0, 0, 0, 0, 0, 0, dq_dot_dp, dq_dot_dq, dq_dot_dr],
                            [0, 0, 0, 0, 0, 0, 0, 0, 0, dr_dot_dp, dr_dot_dq, dr_dot_dr]])
         
+        self.A = np.array([[0,0,0,1,0,0,0,0,0,0,0,0],
+        [0,0,0,0,1,0,0,0,0,0,0,0],
+        [0,0,0,0,0,1,0,0,0,0,0,0],
+        [0,0,0,-k_tx/m,0,0,(u[0]*(math.cos(x[6])*math.sin(x[8]) - math.cos(x[8])*math.sin(x[6])*math.sin(x[7])))/m,(u[0]*math.cos(x[6])*math.cos(x[7])*math.cos(x[8]))/m,(u[0]*(math.cos(x[8])*math.sin(x[6]) - math.cos(x[6])*math.sin(x[7])*math.sin(x[8])))/m,0,0,0],
+        [0,0,0,0,-k_ty/m,0,-(u[0]*(math.cos(x[6])*math.cos(x[8]) + math.sin(x[6])*math.sin(x[7])*math.sin(x[8])))/m,(u[0]*math.cos(x[6])*math.cos(x[7])*math.sin(x[8]))/m,(u[0]*(math.sin(x[6])*math.sin(x[8]) + math.cos(x[6])*math.cos(x[8])*math.sin(x[7])))/m,0,0,0],
+        [0,0,0,0,0,-k_tz/m,-(u[0]*math.cos(x[7])*math.sin(x[6]))/m,-(u[0]*math.cos(x[6])*math.sin(x[7]))/m,0,0,0,0],
+        [0,0,0,0,0,0,x[10]*math.cos(x[6])*math.tan(x[7]) - x[11]*math.sin(x[6])*math.tan(x[7]),x[11]*math.cos(x[6])*(math.tan(x[7])**2 + 1) + x[10]*math.sin(x[6])*(math.tan(x[7])**2 + 1),0,1,math.sin(x[6])*math.tan(x[7]),math.cos(x[6])*math.tan(x[7])],
+        [0,0,0,0,0,0,- x[11]*math.cos(x[6]) - x[10]*math.sin(x[6]),0,0,0,math.cos(x[6]),-math.sin(x[6])],
+        [0,0,0,0,0,0,(x[10]*math.cos(x[6]))/math.cos(x[7]) - (x[11]*math.sin(x[6]))/math.cos(x[7]),(x[11]*math.cos(x[6])*math.sin(x[7]))/math.cos(x[7])**2 + (x[10]*math.sin(x[6])*math.sin(x[7]))/math.cos(x[7])**2,0,0,math.sin(x[6])/math.cos(x[7]),math.cos(x[6])/math.cos(x[7])],
+        [0,0,0,0,0,0,0,0,0,-k_rx/I_x,-(I_r*w_r - I_y*x[11] + I_z*x[11])/I_x,(I_y*x[10] - I_z*x[10])/I_x],
+        [0,0,0,0,0,0,0,0,0,-(I_r*w_r + I_x*x[11] - I_z*x[11])/I_y,-k_ry/I_y,-(I_x*x[9] - I_z*x[9])/I_y],
+        [0,0,0,0,0,0,0,0,0,(I_x*x[10] - I_y*x[10])/I_z,(I_x*x[9] - I_y*x[9])/I_z,-k_rz/I_z]])
+
 
         self.B = np.array([[0, 0, 0, 0],
                            [0, 0, 0, 0],
@@ -217,57 +230,29 @@ class Controller:
                            [0, 0, -l/I_y, 0],
                            [0, 0, 0, -l/I_z]])
 
-        self.A = np.array([[0,0,0,1,0,0,0,0,0,0,0,0],
-        [0,0,0,0,1,0,0,0,0,0,0,0],
-        [0,0,0,0,0,1,0,0,0,0,0,0],
-        [0,0,0,-k_tx/m,0,0,(u[0]*(math.cos(x[6])*math.sin(x[8]) - math.cos(x[8])*math.sin(x[6])*math.sin(x[7])))/m,(u[0]*math.cos(x[6])*math.cos(x[7])*math.cos(x[8]))/m,(u[0]*(math.cos(x[8])*math.sin(x[6]) - math.cos(x[6])*math.sin(x[7])*math.sin(x[8])))/m,0,0,0],
-        [0,0,0,0,-k_ty/m,0,-(u[0]*(math.cos(x[6])*math.cos(x[8]) + math.sin(x[6])*math.sin(x[7])*math.sin(x[8])))/m,(u[0]*math.cos(x[6])*math.cos(x[7])*math.sin(x[8]))/m,(u[0]*(math.sin(x[6])*math.sin(x[8]) + math.cos(x[6])*math.cos(x[8])*math.sin(x[7])))/m,0,0,0],
-        [0,0,0,0,0,-k_tz/m,-(u[0]*math.cos(x[7])*math.sin(x[6]))/m,-(u[0]*math.cos(x[6])*math.sin(x[7]))/m,0,0,0,0],
-        [0,0,0,0,0,0,x[10]*math.cos(x[6])*math.tan(x[7]) - x[11]*math.sin(x[6])*math.tan(x[7]),x[11]*math.cos(x[6])*(math.tan(x[7])**2 + 1) + x[10]*math.sin(x[6])*(math.tan(x[7])**2 + 1),0,1,math.sin(x[6])*math.tan(x[7]),math.cos(x[6])*math.tan(x[7])],
-        [0,0,0,0,0,0,- x[11]*math.cos(x[6]) - x[10]*math.sin(x[6]),0,0,0,math.cos(x[6]),-math.sin(x[6])],
-        [0,0,0,0,0,0,(x[10]*math.cos(x[6]))/math.cos(x[7]) - (x[11]*math.sin(x[6]))/math.cos(x[7]),(x[11]*math.cos(x[6])*math.sin(x[7]))/math.cos(x[7])**2 + (x[10]*math.sin(x[6])*math.sin(x[7]))/math.cos(x[7])**2,0,0,math.sin(x[6])/math.cos(x[7]),math.cos(x[6])/math.cos(x[7])],
-        [0,0,0,0,0,0,0,0,0,-k_rx/I_x,-(I_r*w_r - I_y*x[11] + I_z*x[11])/I_x,(I_y*x[10] - I_z*x[10])/I_x],
-        [0,0,0,0,0,0,0,0,0,-(I_r*w_r + I_x*x[11] - I_z*x[11])/I_y,-k_ry/I_y,-(I_x*x[9] - I_z*x[9])/I_y],
-        [0,0,0,0,0,0,0,0,0,(I_x*x[10] - I_y*x[10])/I_z,(I_x*x[9] - I_y*x[9])/I_z,-k_rz/I_z]])
-        self.B = np.array([[0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [(math.sin(x[6])*math.sin(x[8]) + math.cos(x[6])*math.cos(x[8])*math.sin(x[7]))/m,0,0,0],
-        [-(math.cos(x[8])*math.sin(x[6]) - math.cos(x[6])*math.sin(x[7])*math.sin(x[8]))/m,0,0,0],
-        [(math.cos(x[6])*math.cos(x[7]))/m,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,-l/I_x,0,0],
-        [0,0,-l/I_y,0],
-        [0,0,0,-l/I_z]])
-
         # fmt: on
 
-        # # time discretize system
+        # Time discretize system
         self.A = self.dt * self.A + np.identity(12)
         self.B = self.dt * self.B
-        # self.C = np.hstack(
-        #     (np.identity(3), np.zeros((9, 6)))
-        # )  # only interested in xyz, xyz_dot
 
+        # Output matrix
         self.C = np.zeros((3, 12))
         self.C[:3, :3] = np.identity(3)
 
+        # Disturbance matrix
         self.Cd = np.identity(3)
 
         # observer gain
         self.L = 0.1 * np.identity(3)
 
-        # state cost
+        # state & input cost matrices
         # self.Q = np.diag([1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05])
         self.Q = 0.1 * np.identity(12)
-        # input cost
         self.R = 0.01 * np.identity(4)
 
         # Solve discrete algebraic ricatii eq
         # P = dare solution
-        # L = closed loop eigenvalues L
         # K = state-feedback gain
         self.P, _, self.K = ct.dare(self.A, self.B, self.Q, self.R)
         self.K = -self.K
@@ -328,9 +313,10 @@ class Controller:
         # Create the optimization variable (contains x_r and u_r)
         xu_r = cp.Variable((16), name="xu_r")
 
+        # cost matrices for the quadratic problem
         H = np.identity(16)
         h = np.zeros((16, 1))
-
+        
         cost += (1 / 2) * cp.quad_form(xu_r, H) + h.T @ xu_r
 
         mat1 = np.concatenate((np.identity(12) - self.A, -self.B), axis=1)
@@ -356,13 +342,13 @@ class Controller:
         self.problem_ots.param_dict["y_ref"].value = y_ref
         self.problem_ots.param_dict["d_hat"].value = d_hat
 
-        self.problem_ots.solve(reoptimize=True, solver=cp.GUROBI, verbose=False)
+        self.problem_ots.solve(solver=self.solver, verbose=False)
         if not (
             self.problem_ots.status == "optimal"
             or self.problem_ots.status == "inaccurate optimal"
         ):
             raise RuntimeError(
-                f"MPC solver did not find a solution, due to it being {self.problem_ots.status}"
+                f"OTS solver did not find a solution, due to it being {self.problem_ots.status}"
             )
 
         return (
@@ -375,7 +361,7 @@ class Controller:
         self.problem_mpc.param_dict["x_ref"].value = x_target
         self.problem_mpc.param_dict["u_ref"].value = u_target
 
-        self.problem_mpc.solve(solver=cp.GUROBI, verbose=False)
+        self.problem_mpc.solve(solver=self.solver, verbose=False)
         if not (
             self.problem_mpc.status == "optimal"
             or self.problem_mpc.status == "inaccurate optimal"
