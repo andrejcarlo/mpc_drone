@@ -52,11 +52,7 @@ def simulate(
             u_out = controller.K @ (x_real[:, t] - x_target)
             u_real[:, t] = u_out + u_target
             x_real[:, t + 1] = controller.A @ x_real[:, t] + controller.B @ u_real[:, t]
-            y_real[:, t] = (
-                controller.C @ x_real[:, t + 1]
-                + controller.Cd @ controller.d
-                + measurement_noise
-            )
+            y_real[:, t] = controller.C @ x_real[:, t + 1]
 
         elif controller.control_type == "mpc":
             # if using disturbance recompute OTS and terminal cost, every time with the estimate of d_hat
@@ -127,7 +123,7 @@ def simulate(
         plot_3d_control(x_init[:3], y_target, y_real.T)
         if controller.control_type == "mpc" and controller.beta:
             plot_terminal_cost_lyupanov(Vf, stage_cost, T, None)
-        if np.any(controller.d):
+        if controller.control_type == "mpc" and np.any(controller.d):
             plot_disturbance(controller.d, d_hat, T)
         plt.show()
 
