@@ -43,7 +43,7 @@ def simulate(
     (x_target, u_target) = controller.computeOTS(y_target, np.zeros(controller.dim.nd))
 
     if use_terminal_set:
-        ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
+        controller.c_level = terminal_set.calculate_c(controller, x_target)
 
     start = time.time()
     for t in tqdm(range(0, T), "Simulating"):
@@ -59,7 +59,7 @@ def simulate(
             if np.any(controller.d):
                 (x_target, u_target) = controller.computeOTS(y_target, d_hat[:, t])
                 if use_terminal_set:
-                    ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
+                    controller.c_level = terminal_set.calculate_c(controller, x_target)
                 measurement_noise = 0.01 * np.random.randn(controller.dim.nd)
 
             # action @ k, next state at k+1, plan at k+N
@@ -67,12 +67,12 @@ def simulate(
                 x_init=x_real[:, t], x_target=x_target, u_target=u_target
             )
 
-            # Next x is the x in the second state
-            x_real[:, t + 1] = x_out
+            # Use optimal control sequnce
+            u_real[:, t] = u_out + u_target
             x_all[:, :, t] = x_all_out  # Save the plan (for visualization)
 
-            # Used input is the first input
-            u_real[:, t] = u_out + u_target
+            # Next x is the x in the second state
+            x_real[:, t + 1] = controller.A @ x_real[:, t] + controller.B @ u_real[:, t]
 
             # update system reponse
             y_real[:, t] = (
@@ -98,6 +98,9 @@ def simulate(
             )
     end = time.time()
     time_cost = end - start
+
+    # Add u_op for the input actions graph to make sense
+    u_real += controller.u_op.reshape((controller.dim.nu, 1))
 
     # Function that plots the trajectories.
     # The plot is stored with the name of the first parameter

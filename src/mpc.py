@@ -121,7 +121,7 @@ class Controller:
 
         # Bounds on inputs
         # According to C. Kanellakis, S. S. Mansouri and G. Nikolakopoulos, "Dynamic visual sensing based on MPC controlled UAVs," 2017 25th Mediterranean Conference on Control and Automation (MED), Valletta, Malta, 2017, pp. 1201-1206, doi: 10.1109/MED.2017.7984281.
-        self.umin = np.array([-45.0720, -11.2680, -11.2680, -0.54])
+        self.umin = np.array([-self.u_op[0], -11.2680, -11.2680, -0.54])
         self.umax = np.array([45.0720, 11.2680, 11.2680, 0.54])
 
         # bounds on states
@@ -210,32 +210,39 @@ class Controller:
                            [0, 0, 0, 0, 0, 0, 0, 0, 0, dq_dot_dp, dq_dot_dq, dq_dot_dr],
                            [0, 0, 0, 0, 0, 0, 0, 0, 0, dr_dot_dp, dr_dot_dq, dr_dot_dr]])
         
-        self.A = np.array([[0,0,0,1,0,0,0,0,0,0,0,0],
-        [0,0,0,0,1,0,0,0,0,0,0,0],
-        [0,0,0,0,0,1,0,0,0,0,0,0],
-        [0,0,0,-k_tx/m,0,0,(u[0]*(math.cos(x[6])*math.sin(x[8]) - math.cos(x[8])*math.sin(x[6])*math.sin(x[7])))/m,(u[0]*math.cos(x[6])*math.cos(x[7])*math.cos(x[8]))/m,(u[0]*(math.cos(x[8])*math.sin(x[6]) - math.cos(x[6])*math.sin(x[7])*math.sin(x[8])))/m,0,0,0],
-        [0,0,0,0,-k_ty/m,0,-(u[0]*(math.cos(x[6])*math.cos(x[8]) + math.sin(x[6])*math.sin(x[7])*math.sin(x[8])))/m,(u[0]*math.cos(x[6])*math.cos(x[7])*math.sin(x[8]))/m,(u[0]*(math.sin(x[6])*math.sin(x[8]) + math.cos(x[6])*math.cos(x[8])*math.sin(x[7])))/m,0,0,0],
-        [0,0,0,0,0,-k_tz/m,-(u[0]*math.cos(x[7])*math.sin(x[6]))/m,-(u[0]*math.cos(x[6])*math.sin(x[7]))/m,0,0,0,0],
-        [0,0,0,0,0,0,x[10]*math.cos(x[6])*math.tan(x[7]) - x[11]*math.sin(x[6])*math.tan(x[7]),x[11]*math.cos(x[6])*(math.tan(x[7])**2 + 1) + x[10]*math.sin(x[6])*(math.tan(x[7])**2 + 1),0,1,math.sin(x[6])*math.tan(x[7]),math.cos(x[6])*math.tan(x[7])],
-        [0,0,0,0,0,0,- x[11]*math.cos(x[6]) - x[10]*math.sin(x[6]),0,0,0,math.cos(x[6]),-math.sin(x[6])],
-        [0,0,0,0,0,0,(x[10]*math.cos(x[6]))/math.cos(x[7]) - (x[11]*math.sin(x[6]))/math.cos(x[7]),(x[11]*math.cos(x[6])*math.sin(x[7]))/math.cos(x[7])**2 + (x[10]*math.sin(x[6])*math.sin(x[7]))/math.cos(x[7])**2,0,0,math.sin(x[6])/math.cos(x[7]),math.cos(x[6])/math.cos(x[7])],
-        [0,0,0,0,0,0,0,0,0,-k_rx/I_x,-(I_r*w_r - I_y*x[11] + I_z*x[11])/I_x,(I_y*x[10] - I_z*x[10])/I_x],
-        [0,0,0,0,0,0,0,0,0,-(I_r*w_r + I_x*x[11] - I_z*x[11])/I_y,-k_ry/I_y,-(I_x*x[9] - I_z*x[9])/I_y],
-        [0,0,0,0,0,0,0,0,0,(I_x*x[10] - I_y*x[10])/I_z,(I_x*x[9] - I_y*x[9])/I_z,-k_rz/I_z]])
-
+        # self.A = np.array([[0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+        #                    [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        #                    [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+        #                    [0, 0, 0, -k_tx/m, 0, 0, (u[0]*(math.cos(x[6])*math.sin(x[8]) - math.cos(x[8])*math.sin(x[6])*math.sin(x[7])))/m, (u[0]*math.cos(
+        #                        x[6])*math.cos(x[7])*math.cos(x[8]))/m, (u[0]*(math.cos(x[8])*math.sin(x[6]) - math.cos(x[6])*math.sin(x[7])*math.sin(x[8])))/m, 0, 0, 0],
+        #                    [0, 0, 0, 0, -k_ty/m, 0, -(u[0]*(math.cos(x[6])*math.cos(x[8]) + math.sin(x[6])*math.sin(x[7])*math.sin(x[8])))/m, (u[0]*math.cos(
+        #                        x[6])*math.cos(x[7])*math.sin(x[8]))/m, (u[0]*(math.sin(x[6])*math.sin(x[8]) + math.cos(x[6])*math.cos(x[8])*math.sin(x[7])))/m, 0, 0, 0],
+        #                    [0, 0, 0, 0, 0, -k_tz/m, -(u[0]*math.cos(x[7])*math.sin(x[6]))/m, -(
+        #                        u[0]*math.cos(x[6])*math.sin(x[7]))/m, 0, 0, 0, 0],
+        #                    [0, 0, 0, 0, 0, 0, x[10]*math.cos(x[6])*math.tan(x[7]) - x[11]*math.sin(x[6])*math.tan(x[7]), x[11]*math.cos(x[6])*(math.tan(
+        #                        x[7])**2 + 1) + x[10]*math.sin(x[6])*(math.tan(x[7])**2 + 1), 0, 1, math.sin(x[6])*math.tan(x[7]), math.cos(x[6])*math.tan(x[7])],
+        #                    [0, 0, 0, 0, 0, 0, - x[11]*math.cos(x[6]) - x[10]*math.sin(
+        #                        x[6]), 0, 0, 0, math.cos(x[6]), -math.sin(x[6])],
+        #                    [0, 0, 0, 0, 0, 0, (x[10]*math.cos(x[6]))/math.cos(x[7]) - (x[11]*math.sin(x[6]))/math.cos(x[7]), (x[11]*math.cos(x[6])*math.sin(x[7]))/math.cos(
+        #                        x[7])**2 + (x[10]*math.sin(x[6])*math.sin(x[7]))/math.cos(x[7])**2, 0, 0, math.sin(x[6])/math.cos(x[7]), math.cos(x[6])/math.cos(x[7])],
+        #                    [0, 0, 0, 0, 0, 0, 0, 0, 0, -k_rx/I_x, -
+        #                     (I_r*w_r - I_y*x[11] + I_z*x[11])/I_x, (I_y*x[10] - I_z*x[10])/I_x],
+        #                    [0, 0, 0, 0, 0, 0, 0, 0, 0,
+        #                     (I_r*w_r - I_x*x[11] + I_z*x[11])/I_y, -k_ry/I_y, -(I_x*x[9] - I_z*x[9])/I_y],
+        #                    [0, 0, 0, 0, 0, 0, 0, 0, 0, (I_x*x[10] - I_y*x[10])/I_z, (I_x*x[9] - I_y*x[9])/I_z, -k_rz/I_z]])
 
         self.B = np.array([[0, 0, 0, 0],
                            [0, 0, 0, 0],
                            [0, 0, 0, 0],
-                           [-(math.sin(x[6])*math.sin(x[8]) + math.cos(x[6])
+                           [(math.sin(x[6])*math.sin(x[8]) + math.cos(x[6])
                              * math.cos(x[8])*math.sin(x[7]))/m, 0, 0, 0],
-                           [-(math.sin(x[6])*math.cos(x[8]) - math.cos(x[6])
-                              * math.sin(x[8])*math.sin(x[7]))/m, 0, 0, 0],
-                           [-(math.cos(x[6])*math.cos(x[7]))/m, 0, 0, 0],
+                           [-(math.cos(x[8])*math.sin(x[6]) - math.cos(x[6])
+                              * math.sin(x[7])*math.sin(x[8]))/m, 0, 0, 0],
+                           [(math.cos(x[6])*math.cos(x[7]))/m, 0, 0, 0],
                            [0, 0, 0, 0],
                            [0, 0, 0, 0],
                            [0, 0, 0, 0],
-                           [0, l/I_x, 0, 0],
+                           [0, -l/I_x, 0, 0],
                            [0, 0, -l/I_y, 0],
                            [0, 0, 0, -l/I_z]])
 
