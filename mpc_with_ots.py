@@ -247,11 +247,17 @@ class Controller:
         # # time discretize system
         self.A = self.dt * self.A + np.identity(12)
         self.B = self.dt * self.B
-        self.C = np.identity(12)
-        self.Cd = np.identity(12)
+        # self.C = np.hstack(
+        #     (np.identity(3), np.zeros((9, 6)))
+        # )  # only interested in xyz, xyz_dot
+
+        self.C = np.zeros((3, 12))
+        self.C[:3, :3] = np.identity(3)
+
+        self.Cd = np.identity(3)
 
         # observer gain
-        self.L = 0.1 * np.identity(12)
+        self.L = 0.1 * np.identity(3)
 
         # state cost
         # self.Q = np.diag([1, 1, 1, 1, 1, 1, 0.001, 0.001, 0.001, 0.05, 0.05, 0.05])
@@ -316,8 +322,8 @@ class Controller:
 
         # TODO: Change hardcoded dimensions to x and u shapes
         # Parameters
-        y_ref = cp.Parameter((12), name="y_ref")
-        d_hat = cp.Parameter((12), name="d_hat")
+        y_ref = cp.Parameter((3), name="y_ref")
+        d_hat = cp.Parameter((3), name="d_hat")
 
         # Create the optimization variable (contains x_r and u_r)
         xu_r = cp.Variable((16), name="xu_r")
@@ -328,7 +334,7 @@ class Controller:
         cost += (1 / 2) * cp.quad_form(xu_r, H) + h.T @ xu_r
 
         mat1 = np.concatenate((np.identity(12) - self.A, -self.B), axis=1)
-        mat2 = np.concatenate((self.C, np.zeros((12, 4))), axis=1)
+        mat2 = np.concatenate((self.C, np.zeros((3, 4))), axis=1)
         A_cstr = np.concatenate((mat1, mat2), axis=0)
         b_cstr = cp.hstack((np.zeros(12), (y_ref - self.Cd @ d_hat)))
 
@@ -356,7 +362,7 @@ class Controller:
             or self.problem_ots.status == "inaccurate optimal"
         ):
             raise RuntimeError(
-                f"MPC solver did not find a solution, due to it being {self.problem_mpc.status}"
+                f"MPC solver did not find a solution, due to it being {self.problem_ots.status}"
             )
 
         return (

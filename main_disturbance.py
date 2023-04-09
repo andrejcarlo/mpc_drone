@@ -23,7 +23,7 @@ def simulate(
 ):
     # Initialise the output arrays
     x_real = np.zeros((12, T + 1))
-    d_hat = np.zeros((12, T + 1))
+    d_hat = np.zeros((3, T + 1))
     x_all = np.zeros((12, controller.N + 1, T + 1))
     u_real = np.zeros((4, T))
 
@@ -64,7 +64,7 @@ def simulate(
             y_real = (
                 controller.C @ x_real[:, t + 1]
                 + controller.Cd @ controller.d
-                # + 0.01 * np.random.randn(12)  # measurement error
+                + 0.01 * np.random.randn(3)  # measurement error
             )
 
             d_hat[:, t + 1] = d_hat[:, t] + controller.L @ (
@@ -105,7 +105,7 @@ def simulate(
             u_real,
             T,
         )
-        plot_3d_control(np.vstack((x_init, y_target)), x_real.T)
+        plot_3d_control(np.vstack((x_init[:3], y_target)), x_real.T)
         plot_terminal_cost_lyupanov(Vf, stage_cost, T, None)
         plt.show()
 
@@ -117,28 +117,33 @@ if __name__ == "__main__":
     N = 20  # MPC Horizon
     T = 100  # Duration of simulation
     x_init = np.zeros(12)  # Initial conditions
-    x_target = np.zeros(12)  # State to reach
-    x_init[0:3] = np.array([0.5, 0.0, 0.0])
-    x_init[3:6] = np.array([0.0, 0.0, 0.0])
+    y_target = np.zeros(3)  # State to reach
+    y_target[0:3] = np.array([0.5, 0.0, 0.0])
+    # y_target[3:6] = np.array([0.0, 0.0, 0.0])
 
     print("Initial state is ", x_init)
-    print("Target state to reach is ", x_target)
+    print("Target state to reach is ", y_target)
 
     # Controller
     ctrl = Controller(
-        mpc_horizon=N,
-        timestep_mpc_stages=dt,
+        mpc_horizon=N, timestep_mpc_stages=dt, control_type="mpc"  # or 'mpc'
     )
 
-    ctrl.d = np.array([0.0, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    ctrl.d = np.array([0.0, 0.1, 0.0])
 
-    # # this also rebuilds mpc problem to include the new constraint
-    # ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
+    # (x_target, u_target) = ctrl.computeOTS(y_target)
+
+    # this also rebuilds mpc problem to include the new constraint
+    # Q: Can I have both of these methods working together?
+    # ctrl.c_level = terminal_set.calculate_c(ctrl, x_target) # this enables t set
+    # ctrl.beta = 0.1 # this enables terminal cost
+
+    # print("C is ", ctrl.c_level)
 
     states, inputs, plans, timesteps, Vf, l, outputs, disturbance_est = simulate(
         controller=ctrl,
         x_init=x_init,
-        y_target=x_target,
+        y_target=y_target,
         T=T,
         plot=True,
         plots_suffix="_disturbance",
