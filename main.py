@@ -1,52 +1,70 @@
 import numpy as np
 from tqdm import tqdm
-from mpc import Controller
+import cvxpy as cp
 import matplotlib.pyplot as plt
 import time
 
-
-from visualise import (
+from src.mpc import Controller, Dimension
+import src.terminal_set as terminal_set
+from src.visualise import (
     plot_3d_control,
     plot_action_history,
     plot_state_history,
     plot_terminal_cost_lyupanov,
+    plot_disturbance,
 )
-
-import terminal_set
 
 
 def simulate(
     controller,
     x_init,
-    x_target,
+    y_target,
     T=50,
+    use_terminal_set=False,
     plot=False,
     plots_suffix="",
 ):
-    # Initialise the output arrays
-    x_real = np.zeros((12, T + 1))
-    x_all = np.zeros((12, controller.N + 1, T + 1))
-    u_real = np.zeros((4, T))
+    # Initialise the states
+    x_real = np.zeros((controller.dim.nx, T + 1))
+    x_all = np.zeros((controller.dim.nx, controller.N + 1, T + 1))
+    u_real = np.zeros((controller.dim.nu, T))
     x_real[:, 0] = x_init
-    timesteps = np.linspace(0, controller.dt, T)
+
+    # initialise the outputs and disturbance estimate
+    y_real = np.zeros((controller.dim.ny, T))
+    d_hat = np.zeros((controller.dim.nd, T + 1))
+    measurement_noise = np.zeros(controller.dim.ny)
 
     # terminal cost and stage cost for housekeeping
     Vf = np.zeros(T)
     stage_cost = np.zeros(T)
 
+    # compute OTS with no disturbance
+    (x_target, u_target) = controller.computeOTS(y_target, np.zeros(3))
+
+    if use_terminal_set:
+        ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
+
     start = time.time()
-    # while target_index != trajectory.number_of_points - 1 or trans_error > 0.05:
     for t in tqdm(range(0, T), "Simulating"):
         if controller.control_type == "lqr":
             # only apply lqr control law
-            u_out = controller.K @ x_real[:, t]
-            u_real[:, t] = u_out
+            u_out = controller.K @ (x_real[:, t] - x_target)
+            u_real[:, t] = u_out + u_target
             x_real[:, t + 1] = controller.A @ x_real[:, t] + controller.B @ u_real[:, t]
+            y_real[:, t] = controller.C @ x_real[:, t + 1]
 
         elif controller.control_type == "mpc":
+            # if using disturbance recompute OTS and terminal cost, every time with the estimate of d_hat
+            if np.any(controller.d):
+                (x_target, u_target) = controller.computeOTS(y_target, d_hat[:, t])
+                if use_terminal_set:
+                    ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
+                measurement_noise = 0.01 * np.random.randn(3)
+
             # action @ k, next state at k+1, plan at k+N
             (u_out, x_out, x_all_out) = controller.computeControl(
-                x_init=x_real[:, t], x_target=x_target
+                x_init=x_real[:, t], x_target=x_target, u_target=u_target
             )
 
             # Next x is the x in the second state
@@ -54,15 +72,25 @@ def simulate(
             x_all[:, :, t] = x_all_out  # Save the plan (for visualization)
 
             # Used input is the first input
-            u_real[:, t] = u_out
+            u_real[:, t] = u_out + u_target
+
+            # update system reponse
+            y_real[:, t] = (
+                controller.C @ x_real[:, t + 1]
+                + controller.Cd @ controller.d
+                + measurement_noise
+            )
+
+            # recompute disturbance estimate using Luenberger observer
+            d_hat[:, t + 1] = d_hat[:, t] + controller.L @ (
+                y_real[:, t] - controller.C @ x_real[:, t + 1] - d_hat[:, t]
+            )
 
             # x[N] - x_target
             x_e = x_all_out[:, -1] - x_target
 
             # log tcost and stagecost for plotting
-            Vf[t] = (controller.beta if controller.beta else 1.0) * (
-                x_e.T @ controller.P @ x_e
-            )
+            Vf[t] = controller.beta * (x_e.T @ controller.P @ x_e)
             stage_cost[t] = (
                 x_e.T
                 @ (controller.Q + controller.K.T @ controller.R @ controller.K)
@@ -70,7 +98,6 @@ def simulate(
             )
     end = time.time()
     time_cost = end - start
-    print("For horizon {}, it costs {}s to finish calculation.".format(controller.N,end-start))
 
     # Function that plots the trajectories.
     # The plot is stored with the name of the first parameter
@@ -93,65 +120,55 @@ def simulate(
             u_real,
             T,
         )
-        plot_3d_control(np.vstack((x_init, x_target)), x_real.T)
-        plot_terminal_cost_lyupanov(Vf, stage_cost, T, None)
+        plot_3d_control(x_init[:3], y_target, y_real.T)
+        if controller.control_type == "mpc" and controller.beta:
+            plot_terminal_cost_lyupanov(Vf, stage_cost, T, None)
+        if controller.control_type == "mpc" and np.any(controller.d):
+            plot_disturbance(controller.d, d_hat, T)
         plt.show()
 
-    return (x_real, u_real, x_all, timesteps, Vf, stage_cost, time_cost)
+    return (x_real, u_real, x_all, Vf, stage_cost, y_real, d_hat, time_cost)
 
 
 if __name__ == "__main__":
     dt = 0.10  # Sampling period
     N = 20  # MPC Horizon
     T = 100  # Duration of simulation
-    x_init = np.zeros(12)  # Initial conditions
-    x_target = np.zeros(12)  # State to reach
-    x_target[0:3] = np.array([5.0, 4.0, 8.0])
-    x_target[3:6] = np.array([0.0, 0.0, 0.0])
+    dim = Dimension(nx=12, nu=4, ny=3, nd=3)
+
+    x_init = np.zeros(dim.nx)  # Initial conditions
+    y_target = np.zeros(dim.ny)  # State to reach
+    y_target[0:3] = np.array([1.0, 0.0, 0.0])
+    # y_target[3:6] = np.array([0.0, 0.0, 0.0])
 
     print("Initial state is ", x_init)
-    print("Target state to reach is ", x_target)
+    print("Target state to reach is ", y_target)
 
     # Controller
     ctrl = Controller(
+        dim=dim,
         mpc_horizon=N,
         timestep_mpc_stages=dt,
+        solver=cp.GUROBI,
+        control_type="mpc",  # 'lqr' or 'mpc'
     )
 
-    # this also rebuilds mpc problem to include the new constraint
-    ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
+    # Set disturbance and terminal cost scaling
+    ctrl.d = np.array([0.0, 0.5, 0.0])
+    ctrl.beta = 2.0  # << (very small) beta means you get a behaviour as if tcost was not there at all
 
-    states, inputs, plans, timesteps = simulate(
+    states, inputs, plans, Vf, l, outputs, disturbance_est, time_cost = simulate(
         controller=ctrl,
         x_init=x_init,
-        x_target=x_target,
+        y_target=y_target,
         T=T,
+        use_terminal_set=False,
         plot=True,
-        plots_suffix="_terminal",
+        plots_suffix="_disturbance",
     )
 
-
-# Plot for different mpc predictions horizons (with TCost and Tset)
-## - plot stability (what they have in the example report)
-## - plot computational time versus choice of N
-
-# Andrei
-# We could also do the terminal set with penalise thing? - Done
-# Generate some statistics about these 3 methods, are they faster compared to one another?
-
-
-# set upper boundary input constraint for rpm speeds for each motor
-
-# tracking error statistics, how close you follow the target
-
-# Initial condition in xf, vs init condition outside of xf
-
-
-# Questions to ask prof:
-# Why do we get the terminal cost bigger than the stage cost in the graph (the red bump)
-# Do we need to verify the stability of the nonlinear system numerically?
-# The choice of c and horizon is dependent on the problem to solve.
-# #Ex: reference is at a different location
-## is there any way to solve for c for different locations?
-## in the example that you need to follow multiple targets, this c would need to change?
-## What would be the drawback if we had a really large c
+    print(
+        "Simulation of {} with horizon {}, took {}s.".format(
+            ctrl.control_type, N, time_cost
+        )
+    )
