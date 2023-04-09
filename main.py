@@ -40,7 +40,7 @@ def simulate(
     stage_cost = np.zeros(T)
 
     # compute OTS with no disturbance
-    (x_target, u_target) = controller.computeOTS(y_target, np.zeros(3))
+    (x_target, u_target) = controller.computeOTS(y_target, np.zeros(controller.dim.nd))
 
     if use_terminal_set:
         ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
@@ -60,7 +60,7 @@ def simulate(
                 (x_target, u_target) = controller.computeOTS(y_target, d_hat[:, t])
                 if use_terminal_set:
                     ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
-                measurement_noise = 0.01 * np.random.randn(3)
+                measurement_noise = 0.01 * np.random.randn(controller.dim.nd)
 
             # action @ k, next state at k+1, plan at k+N
             (u_out, x_out, x_all_out) = controller.computeControl(
