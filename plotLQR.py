@@ -18,7 +18,7 @@ x_init_in[0:3] = np.array([0.01, 0.01, 0.1])  # inside the Terminal set x.T@P@x 
 
 ctrl_mpc = Controller(
     dim=dim,
-    mpc_horizon=3,
+    mpc_horizon=30,
     timestep_mpc_stages=dt,
     control_type="mpc",
 )
@@ -26,19 +26,19 @@ ctrl_mpc.beta = 10.0
 # ctrl.c_level = terminal_set.calculate_c(ctrl, x_target)
 
 ctrl_lqr = Controller(
-    dim=dim, mpc_horizon=10, timestep_mpc_stages=dt, control_type="lqr"
+    dim=dim, mpc_horizon=30, timestep_mpc_stages=dt, control_type="lqr"
 )
 
-(states_lqr, _, _, _, _, _, _, _, _) = simulate(
+(states_lqr, _, _, _, _, _, _, _) = simulate(
     controller=ctrl_lqr,
-    x_init=x_init_in,
+    x_init=x_init_out,
     y_target=y_target,
     T=T,
 )
 
-(states, _, _, _, _, _, _, _, _) = simulate(
+(states, _, _, _, _, _, _, _) = simulate(
     controller=ctrl_mpc,
-    x_init=x_init_in,
+    x_init=x_init_out,
     y_target=y_target,
     T=T,
 )
