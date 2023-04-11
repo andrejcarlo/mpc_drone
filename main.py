@@ -39,13 +39,13 @@ def simulate(
     Vf = np.zeros(T)
     stage_cost = np.zeros(T)
 
+    start = time.time()
     # compute OTS with no disturbance
     (x_target, u_target) = controller.computeOTS(y_target, np.zeros(controller.dim.nd))
 
     if use_terminal_set:
         controller.c_level = terminal_set.calculate_c(controller, x_target)
 
-    start = time.time()
     for t in tqdm(range(0, T), "Simulating"):
         if controller.control_type == "lqr":
             # only apply lqr control law

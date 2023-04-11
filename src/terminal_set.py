@@ -48,7 +48,7 @@ def _check_state_c(
     return state_within_range
 
 
-def calculate_c(ctrl, x_target, c_init=2.5, debug=False):
+def calculate_c(ctrl, x_target, c_init=1.0, debug=False):
     c = c_init
     vertices = calculate_vertices_bbox(c, ctrl.P, x_target)
     state_within_range = _check_state_c(ctrl, vertices)
