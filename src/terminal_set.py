@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.linalg as la
+from itertools import product
 
 
 def check_symmetric(P, rtol=1e-05, atol=1e-08):
@@ -17,19 +18,9 @@ def calculate_vertices_bbox(c, P, x_target):
     num_vecs, _ = eigenvectors.shape
 
     vertices = []
-    for i in range(0, num_vecs - 1):
-        for j in range(i + 1, num_vecs):
-            # 4 points per combination of 2 eigvecs
-            # (i+j), (i-j), (-i+j), (-i-j)
-
-            # Direction * semi axis length
-            eig1 = eigenvectors[:, i] * eigenvalues[i]  # np.sqrt(1 / eigenvalues[i])
-            eig2 = eigenvectors[:, j] * eigenvalues[i]  # np.sqrt(1 / eigenvalues[j])
-
-            vertices.append(eig1 + eig2)
-            vertices.append(eig1 - eig2)
-            vertices.append(-eig1 + eig2)
-            vertices.append(-eig1 - eig2)
+    for signs in product([-1, 1], repeat=num_vecs):
+        vertex = np.sum(signs * eigenvalues * eigenvectors, axis=0)
+        vertices.append(vertex)
 
     vertices = np.array(vertices)
     vertices += x_target
@@ -57,13 +48,13 @@ def _check_state_c(
     return state_within_range
 
 
-def calculate_c(ctrl, x_target, c_init=2000):
+def calculate_c(ctrl, x_target, c_init=2.5):
     c = c_init
     vertices = calculate_vertices_bbox(c, ctrl.P, x_target)
     state_within_range = _check_state_c(ctrl, vertices)
 
     # continue to decrease c while checking if we satisfy the constraints
-    while (not state_within_range) and (c > 1e-5):
+    while (not state_within_range) and (c > 1e-3):
         c = c / 1.01
         vertices = calculate_vertices_bbox(c, ctrl.P, x_target)
         state_within_range = _check_state_c(ctrl, vertices)
