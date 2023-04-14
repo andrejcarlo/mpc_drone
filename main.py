@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
     x_init = np.zeros(dim.nx)  # Initial conditions
     y_target = np.zeros(dim.ny)  # State to reach
-    y_target[0:3] = np.array([1.0, 0.0, 0.0])
+    y_target[0:3] = np.array([1.0, 1.0, 1.0])
     # y_target[3:6] = np.array([0.0, 0.0, 0.0])
 
     print("Initial state is ", x_init)
@@ -158,7 +158,7 @@ if __name__ == "__main__":
 
     # Set disturbance and terminal cost scaling
     ctrl.d = np.array([0.0, 0.5, 0.0])
-    ctrl.beta = 2.0  # << (very small) beta means you get a behaviour as if tcost was not there at all
+    ctrl.beta = 4.0  # << (very small) beta means you get a behaviour as if tcost was not there at all
 
     states, inputs, plans, Vf, l, outputs, disturbance_est, time_cost = simulate(
         controller=ctrl,

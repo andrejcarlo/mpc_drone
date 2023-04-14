@@ -9,6 +9,8 @@ To build the environment run
 
 ## Run the simulation
 
+**Important**: In order to run the simulation, you must have GUROBI licensed and available to use as a solver. The environment contains the gurobi package, and if one of the following scripts is ran, it will look for a license on your local machine.
+
 ### Reference tracking 
 
 `python main.py`
